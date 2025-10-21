@@ -1,6 +1,6 @@
 import OAuthClient from 'intuit-oauth';
 import { storage } from '../storage';
-import { TransactionCategory, TransactionType } from '../../shared/schema';
+import { Property, TransactionCategory, TransactionType } from '@shared/schema';
 
 interface MappedTransaction {
   sourceId: string;
@@ -300,20 +300,21 @@ export async function importQuickbooksData(): Promise<{
           name: customer.displayName,
           address: customer.address || 'Unknown',
           units: 1,
-          status: 'active',
+          status: 'available',
           createdAt: new Date(),
           updatedAt: new Date(),
-          ownerId: 1, // Default to admin owner
+          ownerId: 1,
           images: [],
-          rentAmount: 0, // Default value
+          rentAmount: '0',
           bedrooms: 0,
           bathrooms: 0,
           squareFeet: 0,
           description: `Imported from QuickBooks - ${customer.displayName}`,
           amenities: [],
           externalId: customer.id,
-          externalSource: 'quickbooks'
-        });
+          externalSource: 'quickbooks',
+          securityDepositAmount: '0',
+        } as Omit<Property, 'id'>);
         propertiesImported++;
       } catch (error) {
         console.error(`Error importing property from QuickBooks customer ${customer.id}:`, error);
@@ -474,7 +475,7 @@ export async function migrateFromQuickbooks(): Promise<{
 /**
  * Map QuickBooks category to our system
  */
-function mapQuickBooksCategory(description: string): string {
+function mapQuickBooksCategory(description: string): TransactionCategory {
   description = description.toLowerCase();
   
   if (description.includes('rent') || description.includes('lease')) {

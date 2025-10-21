@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import DashboardLayout from '@/components/layout/dashboard-layout';
+import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
+interface IntegrationStatus {
+  doorloop?: boolean;
+  wave?: boolean;
+  hubspot?: boolean;
+  microsoft365?: boolean;
+}
 
 export default function IntegrationsPage() {
   const { toast } = useToast();
@@ -23,7 +30,7 @@ export default function IntegrationsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Check current integration status
-  const { data: integrationStatus, refetch: refetchStatus } = useQuery({
+  const { data: integrationStatus, refetch: refetchStatus } = useQuery<IntegrationStatus>({
     queryKey: ['/api/bookkeeping/validate-keys'],
   });
   

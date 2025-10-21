@@ -5,6 +5,7 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Building2, DollarSign, Users, FileText, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
+import type { MaintenanceRequest } from '@shared/schema';
 
 interface DashboardMetrics {
   mercuryBalance: number;
@@ -35,7 +36,7 @@ export default function ManagerDashboard() {
     queryKey: ['/api/properties'],
   });
 
-  const { data: maintenanceRequests } = useQuery({
+  const { data: maintenanceRequests = [] } = useQuery<MaintenanceRequest[]>({
     queryKey: ['/api/maintenance'],
   });
 
@@ -162,11 +163,11 @@ export default function ManagerDashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {maintenanceRequests?.map((request: any) => (
+                {maintenanceRequests.map((request) => (
                   <div key={request.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div>
                       <h4 className="font-medium">{request.title}</h4>
-                      <p className="text-sm text-muted-foreground">{request.property?.name}</p>
+                      <p className="text-sm text-muted-foreground">{request.propertyId ?? 'Unassigned'}</p>
                     </div>
                     <span className={`px-2 py-1 rounded text-sm ${
                       request.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'

@@ -10,6 +10,7 @@ export function GuestBillingDashboard() {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestedCategory, setSuggestedCategory] = useState('uncategorized');
 
   useEffect(() => {
     if (description) {
@@ -23,7 +24,10 @@ export function GuestBillingDashboard() {
         method: 'POST',
         data: { description: desc }
       });
-      setSuggestions(response.suggestions);
+      setSuggestions(response.suggestions ?? []);
+      if (response.suggestedCategory) {
+        setSuggestedCategory(response.suggestedCategory);
+      }
     } catch (error) {
       console.error('Error getting billing suggestions:', error);
     }
@@ -31,14 +35,12 @@ export function GuestBillingDashboard() {
 
   const handleCharge = async () => {
     try {
-      const response = await apiRequest('/api/billing/charge', {
+      await apiRequest('/api/billing/charge', {
         method: 'POST',
         data: {
           amount: parseFloat(amount),
           description,
-          // Assuming analyzeBillingDescription provides suggestedCategory
-          //  Handle potential errors if suggestedCategory is not available
-          category: response.suggestedCategory || "uncategorized" 
+          category: suggestedCategory
         }
       });
 

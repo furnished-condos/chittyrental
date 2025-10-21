@@ -54,6 +54,8 @@ export default function QuickBooksIntegrationPanel() {
     enabled: !!qbStatus?.connected,
   });
 
+  const accountList = accounts ?? [];
+
   // Import data from QuickBooks
   const importMutation = useMutation({
     mutationFn: async () => {
@@ -225,19 +227,19 @@ export default function QuickBooksIntegrationPanel() {
             
             <Separator />
             
-            {accounts?.length > 0 && (
+            {accountList.length > 0 && (
               <div>
                 <h3 className="font-medium mb-2">Linked Accounts</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {accounts.slice(0, 6).map((account: QuickBooksAccount) => (
+                  {accountList.slice(0, 6).map((account) => (
                     <div key={account.id} className="text-sm p-2 bg-gray-50 rounded">
                       <span className="font-medium">{account.name}</span>
                       <span className="text-xs text-gray-500 block">{account.classification}</span>
                     </div>
                   ))}
-                  {accounts.length > 6 && (
+                  {accountList.length > 6 && (
                     <div className="text-sm p-2 bg-gray-50 rounded text-center">
-                      <span className="text-gray-500">+{accounts.length - 6} more accounts</span>
+                      <span className="text-gray-500">+{accountList.length - 6} more accounts</span>
                     </div>
                   )}
                 </div>

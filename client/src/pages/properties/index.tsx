@@ -12,71 +12,82 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { useForm } from 'react-hook-form';
 import { Plus, Edit, Trash } from 'lucide-react';
+import type { Property } from '@shared/schema';
+
+type PropertySummary = Property & { unit?: string | null };
+
+type PropertyFormValues = {
+  name: string;
+  unit?: string;
+  rentAmount: string;
+  securityDepositAmount: string;
+  status: Property['status'];
+};
 
 export default function PropertiesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [dialogMode, setDialogMode] = useState<'add' | 'edit' | null>(null);
-  const [selectedProperty, setSelectedProperty] = useState(null);
-  
-  const form = useForm({
+  const [selectedProperty, setSelectedProperty] = useState<PropertySummary | null>(null);
+
+  const form = useForm<PropertyFormValues>({
     defaultValues: {
       name: '',
       unit: '',
       rentAmount: '',
       securityDepositAmount: '',
-      status: 'available'
-    }
+      status: 'available',
+    },
   });
 
-  const { data: properties, isLoading } = useQuery({
+  const { data: properties = [], isLoading } = useQuery<PropertySummary[]>({
     queryKey: ['/api/properties'],
   });
 
   const addProperty = useMutation({
-    mutationFn: async (data) => {
+    mutationFn: async (data: PropertyFormValues) => {
       return await apiRequest('/api/properties', {
         method: 'POST',
-        data
+        data,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['/api/properties']);
+      queryClient.invalidateQueries({ queryKey: ['/api/properties'] });
       toast({ title: 'Success', description: 'Property added successfully' });
       setDialogMode(null);
     }
   });
 
   const editProperty = useMutation({
-    mutationFn: async (data) => {
+    mutationFn: async (data: PropertyFormValues & { id: number }) => {
       return await apiRequest(`/api/properties/${data.id}`, {
         method: 'PUT',
-        data
+        data,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['/api/properties']);
+      queryClient.invalidateQueries({ queryKey: ['/api/properties'] });
       toast({ title: 'Success', description: 'Property updated successfully' });
       setDialogMode(null);
     }
   });
 
   const deleteProperty = useMutation({
-    mutationFn: async (id) => {
+    mutationFn: async (id: number) => {
       return await apiRequest(`/api/properties/${id}`, {
         method: 'DELETE'
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['/api/properties']);
+      queryClient.invalidateQueries({ queryKey: ['/api/properties'] });
       toast({ title: 'Success', description: 'Property deleted successfully' });
     }
   });
 
-  const handleSubmit = (data) => {
+  const handleSubmit = (data: PropertyFormValues) => {
     if (dialogMode === 'add') {
       addProperty.mutate(data);
-    } else {
+    } else if (selectedProperty) {
       editProperty.mutate({ ...data, id: selectedProperty.id });
     }
   };
@@ -96,7 +107,7 @@ export default function PropertiesPage() {
         </div>
 
         <div className="grid gap-6">
-          {properties?.map((property) => (
+          {properties.map((property) => (
             <Card key={property.id}>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>{property.name}</CardTitle>
@@ -107,7 +118,13 @@ export default function PropertiesPage() {
                     onClick={() => {
                       setSelectedProperty(property);
                       setDialogMode('edit');
-                      form.reset(property);
+                      form.reset({
+                        name: property.name,
+                        unit: property.unit ?? '',
+                        rentAmount: property.rentAmount?.toString() ?? '',
+                        securityDepositAmount: property.securityDepositAmount?.toString() ?? '',
+                        status: property.status,
+                      });
                     }}
                   >
                     <Edit className="w-4 h-4" />
@@ -124,16 +141,16 @@ export default function PropertiesPage() {
               <CardContent>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <span className="font-medium">Unit:</span> {property.unit}
+                    <span className="font-medium">Unit:</span> {property.unit ?? 'N/A'}
                   </div>
                   <div>
                     <span className="font-medium">Status:</span> {property.status}
                   </div>
                   <div>
-                    <span className="font-medium">Rent:</span> ${property.rentAmount}
+                    <span className="font-medium">Rent:</span> ${property.rentAmount ?? '0'}
                   </div>
                   <div>
-                    <span className="font-medium">Security Deposit:</span> ${property.securityDepositAmount}
+                    <span className="font-medium">Security Deposit:</span> ${property.securityDepositAmount ?? '0'}
                   </div>
                 </div>
               </CardContent>

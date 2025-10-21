@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Key, RefreshCw } from "lucide-react";
 import { useMutation } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest } from '@/lib/api';
 
 interface WaveIntegrationPanelProps {
   onApiKeyChange?: (isValid: boolean) => void;
@@ -23,7 +23,7 @@ export function WaveIntegrationPanel({ onApiKeyChange }: WaveIntegrationPanelPro
         params: { apiKey }
       });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { success: boolean; message?: string }) => {
       if (data.success) {
         toast({
           title: "API Key Valid",

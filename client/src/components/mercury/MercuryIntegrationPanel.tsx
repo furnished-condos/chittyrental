@@ -41,21 +41,21 @@ export function MercuryIntegrationPanel({ onApiKeyChange }: MercuryIntegrationPa
   const { toast } = useToast();
 
   // Get business accounts
-  const { 
-    data: businessAccounts, 
+  const {
+    data: businessAccounts = [],
     isLoading: isLoadingBusinesses,
-    refetch: refetchBusinesses 
-  } = useQuery({
+    refetch: refetchBusinesses
+  } = useQuery<BusinessAccount[]>({
     queryKey: ['/api/business-accounts'],
     retry: 1,
   });
 
   // Get Mercury credentials for selected business
-  const { 
-    data: mercuryCredentials, 
+  const {
+    data: mercuryCredentials = [],
     isLoading: isLoadingCredentials,
-    refetch: refetchCredentials 
-  } = useQuery({
+    refetch: refetchCredentials
+  } = useQuery<MercuryCredential[]>({
     queryKey: ['/api/mercury/credentials', selectedBusinessId],
     enabled: !!selectedBusinessId,
     retry: 1,
@@ -83,7 +83,7 @@ export function MercuryIntegrationPanel({ onApiKeyChange }: MercuryIntegrationPa
         data
       });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: BusinessAccount) => {
       toast({
         title: "Business Added",
         description: "Business account has been added successfully.",
@@ -118,7 +118,7 @@ export function MercuryIntegrationPanel({ onApiKeyChange }: MercuryIntegrationPa
       });
       return res;
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { success: boolean; message?: string; accountsFound?: number }) => {
       setIsValid(data.success);
       if (data.success) {
         toast({
@@ -160,7 +160,7 @@ export function MercuryIntegrationPanel({ onApiKeyChange }: MercuryIntegrationPa
       });
       return res;
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { success: boolean; message?: string }) => {
       if (data.success) {
         toast({
           title: "API Key Saved",

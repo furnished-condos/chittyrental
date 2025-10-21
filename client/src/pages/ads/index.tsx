@@ -40,6 +40,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertAdvertisementSchema } from "@shared/schema";
 
+const toDateTimeLocal = (date: Date) => date.toISOString().slice(0, 16);
+
 export default function AdsPage() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -56,16 +58,18 @@ export default function AdsPage() {
       imageUrl: "",
       targetUrl: "",
       placement: AdPlacement.SIDEBAR,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       isActive: true,
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (ad: InsertAdvertisement) => {
-      const res = await apiRequest("POST", "/api/ads", ad);
-      return res.json();
+      return await apiRequest('/api/ads', {
+        method: 'POST',
+        data: ad,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ads"] });
@@ -195,9 +199,9 @@ export default function AdsPage() {
                         <FormLabel>Start Date</FormLabel>
                         <FormControl>
                           <Input
-                            {...field}
                             type="datetime-local"
-                            value={field.value.split('.')[0]}
+                            value={toDateTimeLocal(field.value)}
+                            onChange={(event) => field.onChange(new Date(event.target.value))}
                           />
                         </FormControl>
                         <FormMessage />
@@ -212,9 +216,9 @@ export default function AdsPage() {
                         <FormLabel>End Date</FormLabel>
                         <FormControl>
                           <Input
-                            {...field}
                             type="datetime-local"
-                            value={field.value.split('.')[0]}
+                            value={toDateTimeLocal(field.value)}
+                            onChange={(event) => field.onChange(new Date(event.target.value))}
                           />
                         </FormControl>
                         <FormMessage />

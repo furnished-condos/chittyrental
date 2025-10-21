@@ -86,37 +86,44 @@ export function setupAuth(app: Express) {
       password: await hashPassword(req.body.password),
     });
 
-    req.login(user, (err) => {
+    req.login(user, (err: Error | null) => {
       if (err) return next(err);
       res.status(201).json(user);
     });
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
-      if (err) {
-        return next(err);
-      }
-      
-      if (!user) {
-        // Return JSON error response when authentication fails
-        return res.status(401).json({ message: info?.message || "Authentication failed" });
-      }
-      
-      // Log the user in
-      req.login(user, (err) => {
+    passport.authenticate(
+      "local",
+      (
+        err: Error | null,
+        user: Express.User | false,
+        info?: { message?: string }
+      ) => {
         if (err) {
           return next(err);
         }
-        
-        // Return user data as JSON
-        return res.status(200).json(user);
-      });
-    })(req, res, next);
+
+        if (!user) {
+          // Return JSON error response when authentication fails
+          return res.status(401).json({ message: info?.message || "Authentication failed" });
+        }
+
+        // Log the user in
+        req.login(user, (loginError: Error | null) => {
+          if (loginError) {
+            return next(loginError);
+          }
+
+          // Return user data as JSON
+          return res.status(200).json(user);
+        });
+      }
+    )(req, res, next);
   });
 
   app.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
+    req.logout((err: Error | null) => {
       if (err) return next(err);
       res.sendStatus(200);
     });
