@@ -12,6 +12,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "chittyauth": "file:packages/chittyauth",
     "@google-cloud/storage": "^7.15.2",
     "@hookform/resolvers": "^3.9.1",
     "@hubspot/api-client": "^12.0.1",

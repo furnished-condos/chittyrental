@@ -3,7 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { storage } from "./storage";
 import { UserRole } from "../shared/schema";
-import crypto from "crypto";
+import { hashPassword } from "chittyauth";
 
 const app = express();
 app.use(express.json());
@@ -40,43 +40,37 @@ app.use((req, res, next) => {
   next();
 });
 
-// Function to hash password
-async function hashPassword(password: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const salt = crypto.randomBytes(16).toString("hex");
-    crypto.scrypt(password, salt, 64, (err, buf) => {
-      if (err) reject(err);
-      resolve(`${buf.toString("hex")}.${salt}`);
-    });
-  });
-}
-
 // Function to create default admin user
 async function createDefaultAdminUser() {
+  const username = process.env.DEFAULT_ADMIN_USERNAME;
+  const password = process.env.DEFAULT_ADMIN_PASSWORD;
+
+  if (!username || !password) {
+    log("Skipping default admin bootstrap. Provide DEFAULT_ADMIN_USERNAME and DEFAULT_ADMIN_PASSWORD to enable it.");
+    return;
+  }
+
   try {
-    const username = 'admin';
-    const password = 'password123'; // Default password, should be changed after login
-    
-    // Check if user already exists
     const existingUser = await storage.getUserByUsername(username);
-    
+
     if (existingUser) {
       log(`Admin user ${username} already exists.`);
       return;
     }
-    
-    // Create new admin user
+
     const hashedPassword = await hashPassword(password);
-    
-    const newUser = await storage.createUser({
+
+    await storage.createUser({
       username,
       password: hashedPassword,
       role: UserRole.MANAGER,
+      full_name: "Admin User",
+      email: "admin@example.com",
       fullName: 'Admin User',
       email: 'admin@example.com'
     });
-    
-    log('Default admin user created successfully.');
+
+    log("Default admin user created successfully.");
   } catch (error) {
     log(`Error creating default admin user: ${error}`);
   }
