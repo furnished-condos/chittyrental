@@ -189,16 +189,16 @@ export default function DocumentsPage() {
   };
 
   // Function to get color for category badges
-  const getCategoryColor = (category: string): "default" | "primary" | "secondary" | "destructive" | "outline" => {
-    const categoryColors: Record<string, "default" | "primary" | "secondary" | "destructive" | "outline"> = {
-      legal: "primary",
+  const getCategoryColor = (category: string): "default" | "secondary" | "destructive" | "outline" => {
+    const categoryColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+      legal: "secondary",
       court: "destructive",
-      communications: "secondary",
+      communications: "default",
       financial: "default",
       media: "outline",
       general: "outline",
     };
-    
+
     return categoryColors[category] || "default";
   };
 

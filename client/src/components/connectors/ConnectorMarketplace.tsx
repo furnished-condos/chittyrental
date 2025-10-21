@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';``
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -51,16 +51,22 @@ export function ConnectorMarketplace() {
   const [activeTab, setActiveTab] = useState('available');
 
   // Fetch available connectors
-  const { data: availableConnectors, isLoading: loadingConnectors } = useQuery({
+  const { data: availableConnectors, isLoading: loadingConnectors } = useQuery<Connector[]>({
     queryKey: ['/api/connectors/available'],
     retry: 1,
   });
 
   // Fetch installed connectors
-  const { data: installedConnectors, isLoading: loadingInstalled, refetch: refetchInstalled } = useQuery({
+  const {
+    data: installedConnectors,
+    isLoading: loadingInstalled,
+    refetch: refetchInstalled,
+  } = useQuery<ConnectorInstance[]>({
     queryKey: ['/api/connectors/installed'],
     retry: 1,
   });
+
+  const installedList: ConnectorInstance[] = installedConnectors ?? [];
 
   // Get connector details
   const getConnectorDetails = useMutation({
@@ -69,12 +75,12 @@ export function ConnectorMarketplace() {
         method: 'GET',
       });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: Connector) => {
       setSelectedConnector(data);
       setCredentialsDialog(true);
       // Initialize empty credentials object
       const creds: Record<string, string> = {};
-      data.requiredCredentials.forEach((cred: any) => {
+      data.requiredCredentials.forEach((cred) => {
         creds[cred.name] = '';
       });
       setCredentials(creds);
@@ -128,7 +134,7 @@ export function ConnectorMarketplace() {
         },
       });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { success: boolean; message?: string }) => {
       toast({
         title: 'Connection Test',
         description: data.message || 'Connection successful',
@@ -184,7 +190,7 @@ export function ConnectorMarketplace() {
         method: 'POST',
       });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { message?: string }) => {
       toast({
         title: 'Sync Complete',
         description: data.message || 'Connector synchronized successfully',
@@ -299,9 +305,9 @@ export function ConnectorMarketplace() {
             <div className="flex justify-center items-center h-64">
               <RefreshCw className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : installedConnectors?.length > 0 ? (
+          ) : installedList.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {installedConnectors?.map((instance: ConnectorInstance) => (
+              {installedList.map((instance: ConnectorInstance) => (
                 <Card key={instance.id}>
                   <CardHeader>
                     <div className="flex justify-between items-start">

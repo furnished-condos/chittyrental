@@ -10,29 +10,41 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { createHmac } from 'crypto';
 import { storage } from '../storage';
+import type { StaticIpConfig } from '@shared/schema';
 
-// Types for proxy configuration
-interface ProxyConfig {
-  proxyUrl: string;
-  apiKey: string;
-  secret: string;
-  enabled: boolean;
-  ipAddress?: string;
-  lastChecked?: Date;
-  status: 'inactive' | 'pending' | 'active';
-}
+type ProxyConfig = Omit<StaticIpConfig, 'createdAt' | 'updatedAt'> & { id?: number };
 
 // Default proxy configuration (can be overridden by environment variables)
 const DEFAULT_PROXY_CONFIG: ProxyConfig = {
+  id: undefined,
+  businessAccountId: null,
   proxyUrl: process.env.STATIC_IP_PROXY_URL || 'https://static-ip-proxy.replit.app',
   apiKey: process.env.STATIC_IP_PROXY_KEY || '',
   secret: process.env.STATIC_IP_PROXY_SECRET || '',
   enabled: false,
-  status: 'inactive'
+  status: 'inactive',
+  ipAddress: null,
+  lastChecked: null,
 };
 
 // In-memory cache for proxy configuration
 let proxyConfig: ProxyConfig = { ...DEFAULT_PROXY_CONFIG };
+
+const persistProxyConfig = async (config: ProxyConfig) => {
+  const saved = await storage.saveStaticIpConfig({
+    businessAccountId: config.businessAccountId ?? null,
+    proxyUrl: config.proxyUrl,
+    apiKey: config.apiKey,
+    secret: config.secret,
+    enabled: config.enabled,
+    status: config.status,
+    ipAddress: config.ipAddress ?? null,
+    lastChecked: config.lastChecked ?? null,
+  });
+
+  proxyConfig = { ...config, ...saved };
+  return saved;
+};
 
 /**
  * Initialize the static IP proxy service
@@ -82,7 +94,7 @@ export async function enableStaticIpProxy(): Promise<ProxyConfig> {
     proxyConfig.status = 'pending';
     
     // Save to database
-    await storage.saveStaticIpConfig(proxyConfig);
+    await persistProxyConfig(proxyConfig);
     
     // Check status and get IP address
     await checkProxyStatus();
@@ -100,7 +112,7 @@ export async function enableStaticIpProxy(): Promise<ProxyConfig> {
 export async function disableStaticIpProxy(): Promise<ProxyConfig> {
   proxyConfig.enabled = false;
   proxyConfig.status = 'inactive';
-  await storage.saveStaticIpConfig(proxyConfig);
+  await persistProxyConfig(proxyConfig);
   return proxyConfig;
 }
 
@@ -205,12 +217,12 @@ async function checkProxyStatus(): Promise<void> {
     
     // Update configuration
     if (response.data.success) {
-      proxyConfig.ipAddress = response.data.ipAddress;
+      proxyConfig.ipAddress = response.data.ipAddress ?? null;
       proxyConfig.status = response.data.status;
       proxyConfig.lastChecked = new Date();
-      
+
       // Save to database
-      await storage.saveStaticIpConfig(proxyConfig);
+      await persistProxyConfig(proxyConfig);
     } else {
       console.error('Proxy status check failed:', response.data.message);
     }

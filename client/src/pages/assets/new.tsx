@@ -4,24 +4,24 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useNavigate } from 'wouter';
+import { useLocation } from 'wouter';
 import { AssetType, AssetStatus } from '@shared/schema';
 
 export default function NewAssetPage() {
-  const [, navigate] = useNavigate();
+  const [, setLocation] = useLocation();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.target);
+    const formData = new FormData(e.currentTarget);
     const asset = Object.fromEntries(formData.entries());
-    
+
     await fetch('/api/assets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(asset)
     });
-    
-    navigate('/assets');
+
+    setLocation('/assets');
   };
 
   return (

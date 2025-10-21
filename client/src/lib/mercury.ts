@@ -5,6 +5,6 @@ import { getQueryFn } from "./queryClient";
 export function useMercuryAccounts() {
   return useQuery<MercuryAccount[]>({
     queryKey: ["/api/mercury/accounts"],
-    queryFn: getQueryFn(),
+    queryFn: getQueryFn({ on401: "throw" }),
   });
 }

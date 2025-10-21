@@ -151,8 +151,8 @@ function getCategoryIcon(category: string) {
 
 export function WorkflowBuilder() {
   const { toast } = useToast();
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowData | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState('');
@@ -160,22 +160,26 @@ export function WorkflowBuilder() {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [nodeConfig, setNodeConfig] = useState<Record<string, any>>({});
+  const [nodeConfig, setNodeConfig] = useState<Record<string, string>>({});
 
   // Fetch workflow templates
-  const { data: templates, isLoading: loadingTemplates } = useQuery({
+  const { data: templates = [], isLoading: loadingTemplates } = useQuery<WorkflowTemplate[]>({
     queryKey: ['/api/workflows/templates'],
     retry: 1,
   });
 
   // Fetch existing workflows
-  const { data: workflows, isLoading: loadingWorkflows, refetch: refetchWorkflows } = useQuery({
+  const {
+    data: workflows = [],
+    isLoading: loadingWorkflows,
+    refetch: refetchWorkflows,
+  } = useQuery<WorkflowData[]>({
     queryKey: ['/api/workflows'],
     retry: 1,
   });
 
   // Fetch available connectors
-  const { data: connectors, isLoading: loadingConnectors } = useQuery({
+  const { data: connectors = [], isLoading: loadingConnectors } = useQuery<ConnectorInfo[]>({
     queryKey: ['/api/connectors/installed'],
     retry: 1,
   });
@@ -192,7 +196,7 @@ export function WorkflowBuilder() {
         },
       });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: WorkflowData) => {
       toast({
         title: 'Success',
         description: 'Workflow created successfully',
@@ -397,7 +401,11 @@ export function WorkflowBuilder() {
 
   const handleNodeClick = (e: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
-    setNodeConfig(node.data.config || {});
+    const configEntries = Object.entries(node.data.config || {}).map(([key, value]) => [
+      key,
+      value === undefined || value === null ? '' : String(value),
+    ]);
+    setNodeConfig(Object.fromEntries(configEntries));
     setIsConfigDialogOpen(true);
   };
 

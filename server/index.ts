@@ -72,7 +72,7 @@ async function createDefaultAdminUser() {
       username,
       password: hashedPassword,
       role: UserRole.MANAGER,
-      full_name: 'Admin User',
+      fullName: 'Admin User',
       email: 'admin@example.com'
     });
     

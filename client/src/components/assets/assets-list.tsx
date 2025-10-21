@@ -5,9 +5,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Wrench } from 'lucide-react';
 import { format } from 'date-fns';
+import type { Asset } from '@shared/schema';
 
 export function AssetsList() {
-  const [assets, setAssets] = useState([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
 
   useEffect(() => {
     fetch('/api/assets')
@@ -15,7 +16,7 @@ export function AssetsList() {
       .then(setAssets);
   }, []);
 
-  const recordMaintenance = async (id, notes) => {
+  const recordMaintenance = async (id: number, notes: string) => {
     await fetch(`/api/assets/${id}/maintenance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -1,4 +1,5 @@
 import { Client } from '@hubspot/api-client';
+import { FilterOperatorEnum } from '@hubspot/api-client/lib/codegen/crm/contacts/models/Filter';
 
 // Initialize HubSpot client
 const hubspotClient = new Client({ 
@@ -202,7 +203,7 @@ export async function upsertHubspotContact(contactData: any) {
             filters: [
               {
                 propertyName: 'email',
-                operator: 'EQ',
+                operator: FilterOperatorEnum.Eq,
                 value: email
               }
             ]
@@ -256,7 +257,7 @@ export async function upsertHubspotDeal(dealData: any, contactIds?: string[]) {
               filters: [
                 {
                   propertyName: 'property_id',
-                  operator: 'EQ',
+                  operator: FilterOperatorEnum.Eq,
                   value: propertyId
                 }
               ]
@@ -282,13 +283,21 @@ export async function upsertHubspotDeal(dealData: any, contactIds?: string[]) {
       
       // Update associations if provided
       if (contactIds && contactIds.length > 0) {
-        for (const contactId of contactIds) {
-          await hubspotClient.crm.deals.associationsApi.create(
-            dealId,
-            'contacts',
-            contactId,
-            [{ category: 'HUBSPOT_DEFINED', typeId: 3 }] // Contact of deal association
-          );
+        const associationsApi = (hubspotClient.crm.deals as unknown as {
+          associationsApi?: {
+            create: (dealId: string, objectType: string, objectId: string, associationTypes: Array<{ category: string; typeId: number }>) => Promise<unknown>;
+          };
+        }).associationsApi;
+
+        if (associationsApi?.create) {
+          for (const contactId of contactIds) {
+            await associationsApi.create(
+              dealId,
+              'contacts',
+              contactId,
+              [{ category: 'HUBSPOT_DEFINED', typeId: 3 }]
+            );
+          }
         }
       }
     } else {
@@ -300,13 +309,21 @@ export async function upsertHubspotDeal(dealData: any, contactIds?: string[]) {
       
       // Create associations if provided
       if (contactIds && contactIds.length > 0) {
-        for (const contactId of contactIds) {
-          await hubspotClient.crm.deals.associationsApi.create(
-            response.id,
-            'contacts',
-            contactId,
-            [{ category: 'HUBSPOT_DEFINED', typeId: 3 }] // Contact of deal association
-          );
+        const associationsApi = (hubspotClient.crm.deals as unknown as {
+          associationsApi?: {
+            create: (dealId: string, objectType: string, objectId: string, associationTypes: Array<{ category: string; typeId: number }>) => Promise<unknown>;
+          };
+        }).associationsApi;
+
+        if (associationsApi?.create) {
+          for (const contactId of contactIds) {
+            await associationsApi.create(
+              response.id,
+              'contacts',
+              contactId,
+              [{ category: 'HUBSPOT_DEFINED', typeId: 3 }]
+            );
+          }
         }
       }
     }
