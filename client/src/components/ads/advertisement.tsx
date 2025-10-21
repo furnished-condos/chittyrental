@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Advertisement } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -15,7 +16,7 @@ export function Advertisement({ placement, className = "" }: AdProps) {
   useEffect(() => {
     // Track impression for the displayed ad
     if (ads?.[0]) {
-      apiRequest("POST", `/api/ads/${ads[0].id}/track/impression`);
+      apiRequest(`/api/ads/${ads[0].id}/track/impression`, { method: "POST" });
     }
   }, [ads]);
 
@@ -29,7 +30,7 @@ export function Advertisement({ placement, className = "" }: AdProps) {
       target="_blank"
       rel="noopener noreferrer"
       className={`block w-full overflow-hidden ${className}`}
-      onClick={() => apiRequest("POST", `/api/ads/${ad.id}/track/click`)}
+      onClick={() => apiRequest(`/api/ads/${ad.id}/track/click`, { method: "POST" })}
     >
       <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
         <img

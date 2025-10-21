@@ -10,6 +10,10 @@ interface ForecastData {
   recommendations: string[];
   riskFactors: string[];
   categoryForecasts: Record<string, number>;
+  missingExpenses?: string[];
+  targetRevenue?: number;
+  recommendedCostReductions?: number;
+  profitabilityRecommendations?: string[];
 }
 
 export function PropertyForecast({ propertyId }: { propertyId: number }) {
@@ -32,6 +36,9 @@ export function PropertyForecast({ propertyId }: { propertyId: number }) {
   const chartData = [
     { name: 'Projected', income: forecast.monthlyIncome, expenses: forecast.monthlyExpenses }
   ];
+
+  const missingExpenses = forecast.missingExpenses ?? [];
+  const profitabilityRecommendations = forecast.profitabilityRecommendations ?? [];
 
   return (
     <Card>
@@ -78,9 +85,9 @@ export function PropertyForecast({ propertyId }: { propertyId: number }) {
 
           <h4 className="font-medium mt-4">Missing Expense Categories</h4>
           <div className="bg-yellow-50 p-3 rounded-md">
-            {forecast.missingExpenses?.length > 0 ? (
+            {missingExpenses.length > 0 ? (
               <ul className="list-disc pl-4">
-                {forecast.missingExpenses.map((expense, i) => (
+                {missingExpenses.map((expense, i) => (
                   <li key={i} className="text-yellow-800">{expense}</li>
                 ))}
               </ul>
@@ -97,10 +104,10 @@ export function PropertyForecast({ propertyId }: { propertyId: number }) {
             </div>
             <div className="mb-2">
               <span className="font-medium">Recommended Cost Reductions: </span>
-              <span className="text-red-700">${forecast.recommendedCostReductions}</span>
+              <span className="text-red-700">${forecast.recommendedCostReductions ?? 0}</span>
             </div>
             <ul className="list-disc pl-4 mt-2">
-              {forecast.profitabilityRecommendations?.map((rec, i) => (
+              {profitabilityRecommendations.map((rec, i) => (
                 <li key={i} className="text-blue-800">{rec}</li>
               ))}
             </ul>

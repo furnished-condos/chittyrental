@@ -2,29 +2,31 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Bar, Pie, Line } from 'recharts';
 import { CalendarDays, DollarSign, Home, Users, BarChart2, FileText, Bell, ArrowUpRight } from 'lucide-react';
-import DashboardLayout from '@/components/layout/dashboard-layout';
+import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import type { BadgeProps } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import type { Property, Tenant, MaintenanceRequest } from '@shared/schema';
 
 export default function ManagerDashboard() {
   const { toast } = useToast();
   const [selectedTab, setSelectedTab] = useState('overview');
   
   // Fetch properties data
-  const { data: properties = [], isLoading: propertiesLoading } = useQuery({
+  const { data: properties = [], isLoading: propertiesLoading } = useQuery<Property[]>({
     queryKey: ['/api/properties'],
   });
-  
+
   // Fetch tenants data
-  const { data: tenants = [], isLoading: tenantsLoading } = useQuery({
+  const { data: tenants = [], isLoading: tenantsLoading } = useQuery<Tenant[]>({
     queryKey: ['/api/tenants'],
   });
-  
+
   // Fetch maintenance requests
-  const { data: maintenanceRequests = [], isLoading: maintenanceLoading } = useQuery({
+  const { data: maintenanceRequests = [], isLoading: maintenanceLoading } = useQuery<MaintenanceRequest[]>({
     queryKey: ['/api/maintenance'],
   });
   
@@ -91,7 +93,7 @@ export default function ManagerDashboard() {
   const totalProperties = properties.length;
   const occupiedUnits = tenants.filter(tenant => tenant.status === 'active').length;
   const occupancyRate = totalProperties > 0 ? Math.round((occupiedUnits / totalProperties) * 100) : 0;
-  const openMaintenanceRequests = maintenanceRequests.filter(req => req.status === 'open').length;
+  const openMaintenanceRequests = maintenanceRequests.filter(req => req.status !== 'completed').length;
   
   // Dummy financial data (will be replaced with actual data from Wave)
   const dummyFinancialData = {
@@ -105,6 +107,32 @@ export default function ManagerDashboard() {
       { name: "Property Management", value: 4250 },
       { name: "Taxes", value: 6300 }
     ]
+  };
+
+  const maintenanceStatusVariant: Record<MaintenanceRequest['status'], BadgeProps['variant']> = {
+    pending: 'destructive',
+    assigned: 'default',
+    in_progress: 'default',
+    completed: 'outline',
+  };
+
+  const maintenanceStatusLabel: Record<MaintenanceRequest['status'], string> = {
+    pending: 'Pending',
+    assigned: 'Assigned',
+    in_progress: 'In Progress',
+    completed: 'Completed',
+  };
+
+  const propertyStatusVariant: Record<Property['status'], BadgeProps['variant']> = {
+    available: 'secondary',
+    occupied: 'default',
+    maintenance: 'destructive',
+  };
+
+  const propertyStatusLabel: Record<Property['status'], string> = {
+    available: 'Available',
+    occupied: 'Occupied',
+    maintenance: 'Maintenance',
   };
   
   return (
@@ -200,8 +228,8 @@ export default function ManagerDashboard() {
               <ul className="space-y-4">
                 {maintenanceRequests.slice(0, 5).map((request, index) => (
                   <li key={index} className="flex items-start space-x-3">
-                    <Badge variant={request.status === 'open' ? 'destructive' : 'outline'} className="mt-0.5">
-                      {request.status}
+                    <Badge variant={maintenanceStatusVariant[request.status]} className="mt-0.5">
+                      {maintenanceStatusLabel[request.status]}
                     </Badge>
                     <div>
                       <p className="font-medium">{request.title}</p>
@@ -238,8 +266,8 @@ export default function ManagerDashboard() {
                             {property.units || 1} {property.units === 1 ? 'Unit' : 'Units'}
                           </Badge>
                           {property.status && (
-                            <Badge variant={property.status === 'active' ? 'default' : 'secondary'}>
-                              {property.status}
+                            <Badge variant={propertyStatusVariant[property.status]}>
+                              {propertyStatusLabel[property.status]}
                             </Badge>
                           )}
                         </div>
@@ -276,7 +304,7 @@ export default function ManagerDashboard() {
                         </p>
                         <div className="flex items-center mt-1">
                           <Badge variant={tenant.status === 'active' ? 'default' : 'secondary'} className="mr-2">
-                            {tenant.status}
+                            {tenant.status.charAt(0).toUpperCase() + tenant.status.slice(1)}
                           </Badge>
                         </div>
                       </div>
@@ -387,8 +415,8 @@ export default function ManagerDashboard() {
                   {maintenanceRequests.map((request, index) => (
                     <div key={index} className="flex items-start justify-between border-b pb-4">
                       <div className="flex items-start space-x-3">
-                        <Badge variant={request.status === 'open' ? 'destructive' : 'outline'} className="mt-0.5">
-                          {request.status}
+                        <Badge variant={maintenanceStatusVariant[request.status]} className="mt-0.5">
+                          {maintenanceStatusLabel[request.status]}
                         </Badge>
                         <div>
                           <p className="font-medium">{request.title}</p>

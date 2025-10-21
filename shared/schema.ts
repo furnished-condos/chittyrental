@@ -408,7 +408,7 @@ export const mercuryCredentials = pgTable("mercury_credentials", {
 // Static IP configurations for businesses
 export const staticIpConfigs = pgTable("static_ip_configs", {
   id: serial("id").primaryKey(),
-  businessAccountId: integer("business_account_id").references(() => businessAccounts.id).notNull(),
+  businessAccountId: integer("business_account_id").references(() => businessAccounts.id),
   proxyUrl: text("proxy_url").notNull(),
   apiKey: text("api_key").notNull(),
   secret: text("secret").notNull(),

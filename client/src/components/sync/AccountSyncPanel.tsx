@@ -2,13 +2,14 @@
 import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "@/components/ui/use-toast";
 import { RefreshCw } from "lucide-react";
 import { useMutation } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/api';
+import { apiRequest } from '@/lib/queryClient';
+import { useToast } from "@/hooks/use-toast";
 
 export function AccountSyncPanel() {
   const [isSyncing, setIsSyncing] = useState(false);
+  const { toast } = useToast();
 
   const syncAccountsMutation = useMutation({
     mutationFn: async () => {
@@ -23,13 +24,13 @@ export function AccountSyncPanel() {
         setIsSyncing(false);
       }
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({
         title: 'Accounts Synced',
         description: `Successfully synced Mercury and Wave accounts.`
       });
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast({
         title: 'Sync Failed',
         description: error.message,

@@ -6,6 +6,14 @@
 import { storage } from '../storage';
 import { FinancialFlowType } from './financial-flows';
 import { Transaction, Property } from '@shared/schema';
+import { openai } from './openai-client';
+
+const toNumber = (value: string | number | null | undefined): number => {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+  return typeof value === 'number' ? value : Number(value);
+};
 
 // Report types
 export enum ReportType {
@@ -93,6 +101,7 @@ export interface FinancialReport {
     netIncome: number;
     metrics: Record<string, number>;
   };
+  aiInsights?: unknown;
 }
 
 /**
@@ -115,8 +124,8 @@ export async function generateProfitLossReport(
   const expenseTransactions = transactions.filter(t => t.type === 'expense');
   
   // Calculate totals
-  const totalIncome = incomeTransactions.reduce((sum, t) => sum + t.amount, 0);
-  const totalExpense = expenseTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const totalIncome = incomeTransactions.reduce((sum, t) => sum + toNumber(t.amount), 0);
+  const totalExpense = expenseTransactions.reduce((sum, t) => sum + Math.abs(toNumber(t.amount)), 0);
   const netIncome = totalIncome - totalExpense;
   
   // Group by category
@@ -187,11 +196,11 @@ export async function generateCashFlowReport(
     const dayTransactions = transactionsByDate[date];
     const inflow = dayTransactions
       .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
-      
+      .reduce((sum, t) => sum + toNumber(t.amount), 0);
+
     const outflow = dayTransactions
       .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+      .reduce((sum, t) => sum + Math.abs(toNumber(t.amount)), 0);
       
     dailyCashFlow[date] = {
       inflow,
@@ -288,16 +297,16 @@ export async function generatePropertyPerformanceReport(
     
     const income = transactions
       .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
-      
+      .reduce((sum, t) => sum + toNumber(t.amount), 0);
+
     const expense = transactions
       .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+      .reduce((sum, t) => sum + Math.abs(toNumber(t.amount)), 0);
       
     const netIncome = income - expense;
     
     // Calculate ROI (assuming property value is stored in metadata)
-    const propertyValue = property.purchasePrice || 100000; // Default if not available
+    const propertyValue = toNumber(property.securityDepositAmount) || 100000;
     const roi = (netIncome / propertyValue) * 100;
     
     // Calculate occupancy (simplified for demo)
@@ -371,7 +380,7 @@ export async function generateExpenseBreakdownReport(
   const expensesByCategory = groupTransactionsByCategory(expenseTransactions);
   
   // Calculate category percentages
-  const totalExpense = expenseTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const totalExpense = expenseTransactions.reduce((sum, t) => sum + Math.abs(toNumber(t.amount)), 0);
   const categoryPercentages: Record<string, number> = {};
   
   Object.keys(expensesByCategory).forEach(category => {
@@ -465,13 +474,13 @@ export async function generateMaintenanceCostReport(
     
     const entry = maintenanceByProperty[transaction.propertyId];
     entry.transactions.push(transaction);
-    entry.total += Math.abs(transaction.amount);
+    entry.total += Math.abs(toNumber(transaction.amount));
     entry.count++;
     entry.averageCost = entry.total / entry.count;
   }
-  
+
   // Calculate totals
-  const totalMaintenance = maintenanceTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const totalMaintenance = maintenanceTransactions.reduce((sum, t) => sum + Math.abs(toNumber(t.amount)), 0);
   const maintenanceCount = maintenanceTransactions.length;
   
   // Sort properties by maintenance cost
@@ -614,7 +623,7 @@ function groupTransactionsByCategory(transactions: Transaction[]): Record<string
     }
     
     result[category].transactions.push(transaction);
-    result[category].total += Math.abs(transaction.amount);
+    result[category].total += Math.abs(toNumber(transaction.amount));
     result[category].count++;
   });
   

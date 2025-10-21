@@ -4,15 +4,16 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
+import type { Property } from "@shared/schema";
 
 export default function CommunicationsPage() {
   const [message, setMessage] = useState("");
   const [selectedProperty, setSelectedProperty] = useState<string>();
   const [targetLanguage, setTargetLanguage] = useState<string>();
 
-  const { data: properties } = useQuery({
+  const { data: properties = [] } = useQuery<Property[]>({
     queryKey: ["/api/properties"],
   });
 
@@ -21,7 +22,7 @@ export default function CommunicationsPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        propertyId: selectedProperty,
+        propertyId: selectedProperty ? Number(selectedProperty) : undefined,
         message,
         translateTo: targetLanguage
       }),
@@ -39,24 +40,34 @@ export default function CommunicationsPage() {
             <CardTitle>Send Mass Notification</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Select 
+            <Select
               value={selectedProperty}
               onValueChange={setSelectedProperty}
-              placeholder="Select Property"
             >
-              {properties?.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              <SelectTrigger>
+                <SelectValue placeholder="Select Property" />
+              </SelectTrigger>
+              <SelectContent>
+                {properties.map((property) => (
+                  <SelectItem key={property.id} value={property.id.toString()}>
+                    {property.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
-            
+
             <Select
               value={targetLanguage}
               onValueChange={setTargetLanguage}
-              placeholder="Target Language (Optional)"
             >
-              <option value="es">Spanish</option>
-              <option value="zh">Chinese</option>
-              <option value="pl">Polish</option>
+              <SelectTrigger>
+                <SelectValue placeholder="Target Language (Optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="es">Spanish</SelectItem>
+                <SelectItem value="zh">Chinese</SelectItem>
+                <SelectItem value="pl">Polish</SelectItem>
+              </SelectContent>
             </Select>
 
             <Textarea

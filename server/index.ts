@@ -66,6 +66,8 @@ async function createDefaultAdminUser() {
       role: UserRole.MANAGER,
       full_name: "Admin User",
       email: "admin@example.com",
+      fullName: 'Admin User',
+      email: 'admin@example.com'
     });
 
     log("Default admin user created successfully.");

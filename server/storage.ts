@@ -265,7 +265,8 @@ export class MemStorage implements IStorage {
       id,
       impressions: 0,
       clicks: 0,
-      createdAt: new Date()
+      createdAt: new Date(),
+      isActive: ad.isActive ?? true,
     };
     this.advertisements.set(id, newAd);
     return newAd;
@@ -362,7 +363,11 @@ export class MemStorage implements IStorage {
     }
 
     const id = this.currentIds.mercuryAccounts++;
-    const newAccount: MercuryAccount = { ...account, id };
+    const newAccount: MercuryAccount = {
+      ...account,
+      id,
+      createdAt: new Date(),
+    };
     this.mercuryAccounts.set(id, newAccount);
     return newAccount;
   }
@@ -383,7 +388,11 @@ export class MemStorage implements IStorage {
 
   async createMercuryTransaction(transaction: InsertMercuryTransaction): Promise<MercuryTransaction> {
     const id = this.currentIds.mercuryTransactions++;
-    const newTransaction: MercuryTransaction = { ...transaction, id };
+    const newTransaction: MercuryTransaction = {
+      ...transaction,
+      id,
+      createdAt: new Date(),
+    };
     this.mercuryTransactions.set(id, newTransaction);
     return newTransaction;
   }
@@ -409,7 +418,12 @@ export class MemStorage implements IStorage {
     }
 
     const id = this.currentIds.openPhoneLines++;
-    const newLine: OpenPhoneLine = { ...line, id };
+    const newLine: OpenPhoneLine = {
+      ...line,
+      id,
+      createdAt: line.createdAt ?? new Date(),
+      assignedTo: line.assignedTo ?? null,
+    };
     this.openPhoneLines.set(id, newLine);
 
     // Update the last sync date
@@ -460,7 +474,17 @@ export class MemStorage implements IStorage {
     }
 
     const id = this.currentIds.openPhoneContacts++;
-    const newContact: OpenPhoneContact = { ...contact, id };
+    const newContact: OpenPhoneContact = {
+      ...contact,
+      id,
+      createdAt: contact.createdAt ?? new Date(),
+      propertyId: contact.propertyId ?? null,
+      name: contact.name ?? null,
+      email: contact.email ?? null,
+      notes: contact.notes ?? null,
+      tags: contact.tags ?? null,
+      lastContactedAt: contact.lastContactedAt ?? null,
+    };
     this.openPhoneContacts.set(id, newContact);
     return newContact;
   }
@@ -500,7 +524,15 @@ export class MemStorage implements IStorage {
   // OpenPhone call operations
   async createOpenPhoneCall(call: InsertOpenPhoneCall): Promise<OpenPhoneCall> {
     const id = this.currentIds.openPhoneCalls++;
-    const newCall: OpenPhoneCall = { ...call, id };
+    const newCall: OpenPhoneCall = {
+      ...call,
+      id,
+      createdAt: call.createdAt ?? new Date(),
+      phoneLineId: call.phoneLineId ?? null,
+      contactId: call.contactId ?? null,
+      recordingUrl: call.recordingUrl ?? null,
+      notes: call.notes ?? null,
+    };
     this.openPhoneCalls.set(id, newCall);
     return newCall;
   }
@@ -540,7 +572,15 @@ export class MemStorage implements IStorage {
   // OpenPhone message operations
   async createOpenPhoneMessage(message: InsertOpenPhoneMessage): Promise<OpenPhoneMessage> {
     const id = this.currentIds.openPhoneMessages++;
-    const newMessage: OpenPhoneMessage = { ...message, id };
+    const newMessage: OpenPhoneMessage = {
+      ...message,
+      id,
+      createdAt: message.createdAt ?? new Date(),
+      phoneLineId: message.phoneLineId ?? null,
+      contactId: message.contactId ?? null,
+      mediaUrls: message.mediaUrls ?? null,
+      isRead: message.isRead ?? false,
+    };
     this.openPhoneMessages.set(id, newMessage);
     return newMessage;
   }
@@ -608,11 +648,24 @@ export class MemStorage implements IStorage {
   
   async createTenant(tenant: InsertTenant): Promise<Tenant> {
     const id = this.currentIds.tenants++;
-    const newTenant: Tenant = { 
-      ...tenant, 
+    const newTenant: Tenant = {
+      ...tenant,
       id,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      userId: tenant.userId ?? null,
+      propertyId: tenant.propertyId ?? null,
+      phone: tenant.phone ?? null,
+      leaseStart: tenant.leaseStart ?? null,
+      leaseEnd: tenant.leaseEnd ?? null,
+      monthlyRent: tenant.monthlyRent ?? null,
+      securityDeposit: tenant.securityDeposit ?? null,
+      backgroundCheckStatus: tenant.backgroundCheckStatus ?? null,
+      notes: tenant.notes ?? null,
+      documents: tenant.documents ?? null,
+      externalId: tenant.externalId ?? null,
+      externalSource: tenant.externalSource ?? null,
+      status: tenant.status ?? 'prospect',
     };
     this.tenants.set(id, newTenant);
     return newTenant;
