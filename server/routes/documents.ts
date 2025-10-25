@@ -11,7 +11,9 @@ const DocumentCategories = {
   COMMUNICATION: 'communication',
   FINANCIAL: 'financial',
   GENERAL: 'general'
-};
+} as const;
+
+const DOCUMENT_CATEGORY_VALUES = Object.values(DocumentCategories);
 import { googleDriveService } from '../services/google-drive';
 import { analyzeLegalDocument } from '../services/analysis';
 
@@ -95,10 +97,10 @@ router.get('/', async (req: Request, res: Response) => {
       return acc;
     }, {});
     
-    res.json({ 
+    res.json({
       files,
       groupedFiles,
-      categories: Object.keys(DocumentCategories) 
+      categories: DOCUMENT_CATEGORY_VALUES
     });
   } catch (error) {
     console.error('Error listing documents:', error);
@@ -123,7 +125,7 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
     let { category = 'general', subcategory, analyze = false } = req.body;
     
     // Validate top-level category
-    const validTopCategories = Object.keys(DocumentCategories);
+    const validTopCategories = DOCUMENT_CATEGORY_VALUES;
     
     if (!validTopCategories.includes(category)) {
       return res.status(400).json({ 
@@ -134,13 +136,7 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
     
     // Validate subcategory if provided
     if (subcategory) {
-      const validSubcategories = DocumentCategories[category as keyof typeof DocumentCategories];
-      if (Array.isArray(validSubcategories) && validSubcategories.length > 0 && !validSubcategories.includes(subcategory)) {
-        return res.status(400).json({ 
-          error: 'Invalid subcategory',
-          validSubcategories: validSubcategories
-        });
-      }
+      // Subcategory validation can be implemented once the category map includes them
     }
     
     // Clean up the filename
