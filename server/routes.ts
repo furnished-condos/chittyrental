@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
-import { storage } from "./storage";
+import authRoutes from './routes/auth';
 import openPhoneRoutes from './routes/openphone';
 import communicationsRoutes from './routes/communications';
 import doorloopRoutes from './routes/doorloop';
@@ -25,6 +25,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
   // Register routes
+  app.use('/api', authRoutes);
   app.use('/api/users', usersRoutes);
   app.use('/api/openphone', openPhoneRoutes);
   app.use('/api/communications', communicationsRoutes);
