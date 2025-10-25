@@ -5,9 +5,9 @@ import { validateCredentials, createSession, revokeSession } from '../auth';
 const router = Router();
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
   try {
-    const user = await validateCredentials(email, password);
+    const user = await validateCredentials(username, password);
     const session = await createSession(user);
     res.json({ user, token: session.token });
   } catch (error) {

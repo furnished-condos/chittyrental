@@ -20,11 +20,13 @@ import quickbooksRoutes from './routes/quickbooks';
 import mercuryRoutes from './routes/mercury';
 import staticIpRoutes from './routes/static-ip-routes';
 import tenantsRoutes from './routes/tenants';
+import authRoutes from './routes/auth';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
   // Register routes
+  app.use('/api/auth', authRoutes);
   app.use('/api/users', usersRoutes);
   app.use('/api/openphone', openPhoneRoutes);
   app.use('/api/communications', communicationsRoutes);

@@ -4,6 +4,12 @@ import createMemoryStore from "memorystore";
 
 const MemoryStore = createMemoryStore(session);
 
+export interface SessionRecord {
+  token: string;
+  user: Omit<User, "password">;
+  createdAt: Date;
+}
+
 export interface IStorage {
   // Static IP operations
   getStaticIpConfig(businessAccountId?: number): Promise<StaticIpConfig | undefined>;
@@ -104,6 +110,11 @@ export interface IStorage {
   updateTenant(id: number, updates: Partial<Tenant>): Promise<Tenant>;
   deleteTenant(id: number): Promise<boolean>;
 
+  // Session operations
+  saveSession(session: SessionRecord): Promise<SessionRecord>;
+  getSession(token: string): Promise<SessionRecord | undefined>;
+  deleteSession(token: string): Promise<void>;
+
   sessionStore: session.Store;
 }
 
@@ -124,6 +135,7 @@ export class MemStorage implements IStorage {
   private assets: Map<number, Asset>;
   private staticIpConfigs: Map<number, StaticIpConfig>;
   private tenants: Map<number, Tenant>;
+  private sessions: Map<string, SessionRecord>;
   private currentIds: { [key: string]: number };
   private lastOpenPhoneSyncDate: Date | undefined;
   sessionStore: session.Store;
@@ -145,6 +157,7 @@ export class MemStorage implements IStorage {
     this.assets = new Map();
     this.staticIpConfigs = new Map();
     this.tenants = new Map();
+    this.sessions = new Map();
     this.currentIds = {
       users: 1,
       properties: 1,
@@ -687,9 +700,22 @@ export class MemStorage implements IStorage {
   async deleteTenant(id: number): Promise<boolean> {
     const exists = this.tenants.has(id);
     if (!exists) return false;
-    
+
     this.tenants.delete(id);
     return true;
+  }
+
+  async saveSession(sessionRecord: SessionRecord): Promise<SessionRecord> {
+    this.sessions.set(sessionRecord.token, sessionRecord);
+    return sessionRecord;
+  }
+
+  async getSession(token: string): Promise<SessionRecord | undefined> {
+    return this.sessions.get(token);
+  }
+
+  async deleteSession(token: string): Promise<void> {
+    this.sessions.delete(token);
   }
 
   // Asset operations
