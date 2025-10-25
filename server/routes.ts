@@ -20,6 +20,7 @@ import quickbooksRoutes from './routes/quickbooks';
 import mercuryRoutes from './routes/mercury';
 import staticIpRoutes from './routes/static-ip-routes';
 import tenantsRoutes from './routes/tenants';
+import complianceRoutes from './routes/compliance';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
@@ -43,6 +44,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/mercury', mercuryRoutes);
   app.use('/api/static-ip', staticIpRoutes);
   app.use('/api/tenants', tenantsRoutes);
+  app.use('/api/compliance', complianceRoutes);
 
   const httpServer = createServer(app);
   return httpServer;
