@@ -95,10 +95,10 @@ router.get('/', async (req: Request, res: Response) => {
       return acc;
     }, {});
     
-    res.json({ 
+    res.json({
       files,
       groupedFiles,
-      categories: Object.keys(DocumentCategories) 
+      categories: Object.values(DocumentCategories)
     });
   } catch (error) {
     console.error('Error listing documents:', error);
@@ -123,7 +123,7 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
     let { category = 'general', subcategory, analyze = false } = req.body;
     
     // Validate top-level category
-    const validTopCategories = Object.keys(DocumentCategories);
+    const validTopCategories = Object.values(DocumentCategories);
     
     if (!validTopCategories.includes(category)) {
       return res.status(400).json({ 
