@@ -10,6 +10,7 @@ import expenseRoutes from './routes/expenses';
 import documentsRouter from './routes/documents';
 import analysisRoutes from './routes/analysis';
 import usersRoutes from './routes/users';
+import legacyUserRoutes from './routes/legacy-user';
 import bookkeepingRoutes from './routes/bookkeeping';
 import waveChittyRoutes from './routes/wave-chitty';
 import assetsRoutes from './routes/assets';
@@ -26,6 +27,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
   // Register routes
+  app.use('/api/user', legacyUserRoutes);
   app.use('/api/users', usersRoutes);
   app.use('/api/openphone', openPhoneRoutes);
   app.use('/api/communications', communicationsRoutes);
