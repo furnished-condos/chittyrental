@@ -143,56 +143,32 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
       }
     }
     
-    // Clean up the filename
-    let cleanedFilename = req.file.originalname
-      .replace(/[^a-zA-Z0-9-_.]/g, '_')
-      .toLowerCase();
-    
-    // Create the full category path
-    let fullCategory = subcategory ? `${category}/${subcategory}` : category;
-    
-    // Automatically determine category and filename if not explicitly provided
-    let fileContent = '';
+    const parseResult = await documentOrganizer.parseFileContent({ localPath: req.file.path, fileName: req.file.originalname });
+    let fileContent = parseResult.textContent || '';
+
+    let cleanedFilename = documentOrganizer.cleanupFilename(req.file.originalname);
+
+    if (!subcategory) {
+      subcategory = undefined;
+    }
+
     if (category === 'general' || !subcategory) {
-      // Read file content for better categorization
-      try {
-        fileContent = fs.readFileSync(req.file.path, 'utf8');
-      } catch (e) {
-        // Binary file, can't read as text
-      }
-      
-      // Use advanced categorization if no specific category provided
-      if (category === 'general') {
-        const detectedCategory = documentOrganizer.categorizeDocument(req.file.originalname, fileContent);
-        if (detectedCategory !== 'general') {
-          fullCategory = detectedCategory;
+      const detectedCategory = documentOrganizer.categorizeDocument(req.file.originalname, fileContent);
+      if (detectedCategory !== 'general') {
+        const [top, ...rest] = detectedCategory.split('/');
+        if (top) {
+          category = top;
+        }
+        if (!req.body.subcategory && rest.length) {
+          subcategory = rest.join('/');
         }
       }
-      
-      // Clean up filename
-      const betterFilename = documentOrganizer.cleanupFilename(cleanedFilename);
-      cleanedFilename = betterFilename;
     }
-    
-    // Generate date folder
+
+    const fullCategory = subcategory ? `${category}/${subcategory}` : category;
     const date = new Date().toISOString().split('T')[0];
-    
-    // Create storage path
     const storageKey = `ARIAS_V_BIANCHI/${fullCategory}/${date}/${cleanedFilename}`;
-    
-    // Upload to Replit Object Storage
-    await documentOrganizer.uploadFile(req.file.path, storageKey);
-    
-    // Determine if it's a text file for analysis
-    const isTextFile = ['.txt', '.md', '.doc', '.docx'].includes(
-      path.extname(req.file.originalname).toLowerCase()
-    );
-    
-    // For text files, read content for analysis if not already read
-    if (isTextFile && !fileContent) {
-      fileContent = fs.readFileSync(req.file.path, 'utf8');
-    }
-    
+
     // Upload to Google Drive if configured
     let driveFileId: string | undefined;
     let driveUrl: string | undefined;
@@ -239,6 +215,8 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
       }
     }
     
+    await documentOrganizer.uploadFile(req.file.path, storageKey, { cleanup: true });
+
     // Perform document analysis if requested
     let analysisResult: any = null;
     if (analyze && category === 'legal') {
@@ -259,9 +237,7 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
       analysis: analysisResult
     });
     
-    // Clean up the temporary file
-    fs.unlinkSync(req.file.path);
-    
+   
   } catch (error) {
     console.error('Error uploading document:', error);
     res.status(500).json({ 
@@ -270,8 +246,12 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
     });
     
     // Clean up temporary file if it exists
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    if (req.file) {
+      try {
+        await documentOrganizer.cleanupLocalFile(req.file.path);
+      } catch (cleanupError) {
+        console.warn('Failed to remove temporary upload:', cleanupError);
+      }
     }
   }
 });
@@ -361,28 +341,18 @@ router.get('/download/:storagePath(*)', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Storage path is required' });
     }
     
-    // Create a temporary file path
-    const tempDir = path.join(__dirname, '../../../temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-    
-    const filename = storagePath.split('/').pop() || 'document';
-    const tempFilePath = path.join(tempDir, `${Date.now()}-${filename}`);
-    
     try {
-      // Download the file from storage
-      await documentOrganizer.downloadFile(storagePath, tempFilePath);
-      
-      // Send the file
-      res.download(tempFilePath, filename, (err) => {
-        // Clean up the temporary file after sending or on error
-        if (fs.existsSync(tempFilePath)) {
-          fs.unlinkSync(tempFilePath);
+      const downloadResult = await documentOrganizer.downloadFile(storagePath);
+
+      res.download(downloadResult.filePath, downloadResult.fileName, async (err) => {
+        try {
+          await downloadResult.cleanup();
+        } catch (cleanupError) {
+          console.warn('Failed to remove temporary download:', cleanupError);
         }
-        
+
         if (err && !res.headersSent) {
-          res.status(500).json({ 
+          res.status(500).json({
             error: 'Failed to download file',
             message: err.message
           });
@@ -457,36 +427,18 @@ router.post('/google-drive/upload', async (req: Request, res: Response) => {
  */
 router.post('/parse', upload.single('document'), async (req: Request & { file?: Express.Multer.File }, res: Response) => {
   try {
-    // Handle both file upload and storagePath parameter
-    let filePath: string | undefined;
-    
+    let parseResult;
     if (req.file) {
-      // File was uploaded
-      filePath = req.file.path;
+      parseResult = await documentOrganizer.parseFileContent({ localPath: req.file.path, cleanup: true, fileName: req.file.originalname });
     } else if (req.body.storagePath) {
-      // Storage path was provided
-      filePath = req.body.storagePath;
+      parseResult = await documentOrganizer.parseFileContent({ storageKey: req.body.storagePath });
     } else {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'No file or storagePath provided',
         message: 'Either upload a file or provide a storagePath parameter'
       });
     }
-    
-    // Parse the file
-    if (!filePath) {
-      return res.status(400).json({ 
-        error: 'Invalid file path',
-        message: 'File path is required for parsing'
-      });
-    }
-    const parseResult = await documentOrganizer.parseFileContent(filePath);
-    
-    // Clean up uploaded file if it exists
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    
+
     // Return the parsed content
     res.json({
       success: true,
@@ -500,8 +452,12 @@ router.post('/parse', upload.single('document'), async (req: Request & { file?: 
     });
     
     // Clean up temporary file if it exists
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    if (req.file) {
+      try {
+        await documentOrganizer.cleanupLocalFile(req.file.path);
+      } catch (cleanupError) {
+        console.warn('Failed to remove temporary upload:', cleanupError);
+      }
     }
   }
 });
@@ -572,21 +528,12 @@ router.post('/extract', async (req: Request, res: Response) => {
       });
     }
     
-    // Check if package exists
-    if (!fs.existsSync(packagePath)) {
-      return res.status(404).json({ 
-        error: 'Package file not found',
-        message: `The file at ${packagePath} does not exist`
-      });
-    }
-    
-    // Extract the package
     const extractedFiles = await documentOrganizer.extractPackage(packagePath, {
       password,
       onlyFiles,
       excludeFiles
     });
-    
+
     // Return information about the extracted files
     res.json({
       success: true,
