@@ -10,6 +10,14 @@ interface OrganizedDocument {
   analysisResult?: any;
 }
 
+interface DocumentFileSummary {
+  path: string;
+  category: string;
+  subcategory?: string;
+  dateAdded: string;
+  fileName: string;
+}
+
 export class DocumentOrganizer {
   private objectStorage: Client;
   
@@ -68,19 +76,41 @@ export class DocumentOrganizer {
     return `ARIAS_V_BIANCHI/${category}/${date}/${sanitizedName}`;
   }
 
-  async listOrganizedFiles(): Promise<{path: string, category: string}[]> {
+  async listOrganizedFiles(): Promise<DocumentFileSummary[]> {
     const files = await this.objectStorage.list();
     if (!files.ok) {
       throw new Error('Failed to list files');
     }
-    
+
     return files.value
       .filter(file => file.name.startsWith('ARIAS_V_BIANCHI/'))
       .map(file => {
         const parts = file.name.split('/');
+        const fileName = parts[parts.length - 1];
+        const category = (parts[1] || 'unknown').toLowerCase();
+        const potentialDate = parts.length > 2 ? parts[parts.length - 2] : undefined;
+        const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+        const dateAdded = potentialDate && datePattern.test(potentialDate) ? potentialDate : 'unknown';
+
+        let subcategory: string | undefined;
+        if (dateAdded !== 'unknown') {
+          const subcategorySegments = parts.slice(2, parts.length - 2);
+          if (subcategorySegments.length > 0) {
+            subcategory = subcategorySegments.join('/').toLowerCase();
+          }
+        } else {
+          const subcategorySegments = parts.slice(2, parts.length - 1);
+          if (subcategorySegments.length > 0) {
+            subcategory = subcategorySegments.join('/').toLowerCase();
+          }
+        }
+
         return {
           path: file.name,
-          category: parts[1] || 'unknown'
+          category,
+          subcategory,
+          dateAdded,
+          fileName
         };
       });
   }
