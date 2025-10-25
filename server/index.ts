@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { UserRole } from "../shared/schema";
 import { hashPassword } from "chittyauth";
 
-const app = express();
+export const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 

@@ -3,15 +3,7 @@ import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
-import { DocumentOrganizer } from '../services/document-organizer';
-
-// Define document categories here since it's not exported from document-organizer
-const DocumentCategories = {
-  LEGAL: 'legal',
-  COMMUNICATION: 'communication',
-  FINANCIAL: 'financial',
-  GENERAL: 'general'
-};
+import { DocumentOrganizer, DocumentCategories } from '../services/document-organizer';
 import { googleDriveService } from '../services/google-drive';
 import { analyzeLegalDocument } from '../services/analysis';
 
@@ -95,10 +87,10 @@ router.get('/', async (req: Request, res: Response) => {
       return acc;
     }, {});
     
-    res.json({ 
+    res.json({
       files,
       groupedFiles,
-      categories: Object.keys(DocumentCategories) 
+      categories: Object.values(DocumentCategories)
     });
   } catch (error) {
     console.error('Error listing documents:', error);
@@ -121,39 +113,50 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
     
     // Get category and subcategory information
     let { category = 'general', subcategory, analyze = false } = req.body;
-    
-    // Validate top-level category
-    const validTopCategories = Object.keys(DocumentCategories);
-    
-    if (!validTopCategories.includes(category)) {
-      return res.status(400).json({ 
+
+    const normalizeCategory = (value: string): string | null => {
+      if (!value) return null;
+      const lower = value.toLowerCase();
+      const known = Object.values(DocumentCategories).find(cat => cat === lower);
+      if (known) return known;
+      const upper = value.toUpperCase() as keyof typeof DocumentCategories;
+      if (DocumentCategories[upper]) {
+        return DocumentCategories[upper];
+      }
+      return null;
+    };
+
+    const normalizedCategory = normalizeCategory(category);
+    if (!normalizedCategory) {
+      return res.status(400).json({
         error: 'Invalid category',
-        validCategories: validTopCategories
+        validCategories: Object.values(DocumentCategories)
       });
     }
-    
-    // Validate subcategory if provided
-    if (subcategory) {
-      const validSubcategories = DocumentCategories[category as keyof typeof DocumentCategories];
-      if (Array.isArray(validSubcategories) && validSubcategories.length > 0 && !validSubcategories.includes(subcategory)) {
-        return res.status(400).json({ 
-          error: 'Invalid subcategory',
-          validSubcategories: validSubcategories
-        });
-      }
-    }
-    
+
+    category = normalizedCategory;
+
+    const normalizeSubcategory = (value: string): string => {
+      return value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+    };
+
     // Clean up the filename
-    let cleanedFilename = req.file.originalname
-      .replace(/[^a-zA-Z0-9-_.]/g, '_')
-      .toLowerCase();
-    
+    let cleanedFilename = documentOrganizer.cleanupFilename(req.file.originalname);
+
     // Create the full category path
-    let fullCategory = subcategory ? `${category}/${subcategory}` : category;
+    const normalizedSubcategory = subcategory ? normalizeSubcategory(subcategory) : undefined;
+    let sanitizedSubcategory = normalizedSubcategory && normalizedSubcategory.length > 0 ? normalizedSubcategory : undefined;
+    subcategory = sanitizedSubcategory;
+    let fullCategory = sanitizedSubcategory ? `${category}/${sanitizedSubcategory}` : category;
     
     // Automatically determine category and filename if not explicitly provided
     let fileContent = '';
-    if (category === 'general' || !subcategory) {
+    if (category === 'general' || !sanitizedSubcategory) {
       // Read file content for better categorization
       try {
         fileContent = fs.readFileSync(req.file.path, 'utf8');
@@ -166,12 +169,14 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
         const detectedCategory = documentOrganizer.categorizeDocument(req.file.originalname, fileContent);
         if (detectedCategory !== 'general') {
           fullCategory = detectedCategory;
+          category = detectedCategory;
+          sanitizedSubcategory = undefined;
+          subcategory = undefined;
         }
       }
-      
+
       // Clean up filename
-      const betterFilename = documentOrganizer.cleanupFilename(cleanedFilename);
-      cleanedFilename = betterFilename;
+      cleanedFilename = documentOrganizer.cleanupFilename(cleanedFilename);
     }
     
     // Generate date folder
@@ -253,7 +258,8 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
         size: req.file.size,
         storageKey,
         category,
-        uploadDate: new Date().toISOString(),
+        subcategory: sanitizedSubcategory,
+        dateAdded: new Date().toISOString(),
         googleDrive: driveFileId ? { fileId: driveFileId, url: driveUrl } : undefined
       },
       analysis: analysisResult
