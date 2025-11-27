@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { RequestHandler } from 'express-serve-static-core';
+import type { LegalDocumentAnalysisResult } from '../services/analysis';
 
 // Add Multer types
 declare global {
@@ -234,11 +235,27 @@ router.post('/arias-v-bianchi', async (req: Request, res: Response) => {
     // Generate a comprehensive summary of all documents
     if (Object.keys(results).length > 1) {
       // Create a condensed version of each result
-      const condensedResults = Object.entries(results).map(([type, analysis]) => ({
-        documentType: type,
-        summary: (analysis as any).summary,
-        keyFindings: (analysis as any).keyFindings.slice(0, 2)
-      }));
+      const condensedResults = Object.entries(results).map(([type, analysis]) => {
+        const result = analysis as LegalDocumentAnalysisResult;
+        const topFindings = [
+          ...result.complianceFindings.federal,
+          ...result.complianceFindings.state,
+          ...result.complianceFindings.local
+        ].slice(0, 2);
+
+        return {
+          documentType: type,
+          summary: result.summary,
+          complianceHighlights: topFindings.map((finding) => ({
+            jurisdiction: finding.jurisdiction,
+            level: finding.level,
+            status: finding.complianceStatus,
+            keyFindings: finding.keyFindings.slice(0, 2)
+          })),
+          landlordActions: result.actionItems.landlord.slice(0, 1),
+          tenantActions: result.actionItems.tenant.slice(0, 1)
+        };
+      });
       
       // Generate an overall summary
       const completion = await openai.chat.completions.create({
@@ -250,10 +267,11 @@ router.post('/arias-v-bianchi', async (req: Request, res: Response) => {
           { 
             role: "user", 
             content: `Generate a comprehensive legal analysis for ARIAS V BIANCHI based on these document analyses:
-            
+
             ${JSON.stringify(condensedResults, null, 2)}
-            
-            Provide an executive summary that highlights the key legal issues, risks, and recommendations.` 
+
+            Provide an executive summary that surfaces the most pressing compliance risks by jurisdiction,
+            and summarize the highest-impact landlord and tenant actions.`
           }
         ],
         model: "gpt-3.5-turbo",
