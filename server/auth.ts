@@ -1,6 +1,7 @@
 import type { Express } from "express";
-import { createChittyAuth } from "chittyauth";
-import { storage } from "./storage";
+import { randomBytes } from "crypto";
+import { createChittyAuth, comparePasswords } from "chittyauth";
+import { storage, type SessionRecord } from "./storage";
 import type { User as SelectUser } from "@shared/schema";
 
 declare global {
@@ -19,6 +20,46 @@ export function setupAuth(app: Express) {
   });
 
   auth.initialize(app);
+}
+
+function sanitizeUser(user: SelectUser): Omit<SelectUser, "password"> {
+  const { password: _password, ...safeUser } = user;
+  return safeUser;
+}
+
+export async function validateCredentials(username: string, password: string) {
+  if (!username || !password) {
+    throw new Error("Invalid credentials");
+  }
+
+  const user = await storage.getUserByUsername(username);
+  if (!user) {
+    throw new Error("Invalid credentials");
+  }
+
+  const passwordMatches = await comparePasswords(password, user.password);
+  if (!passwordMatches) {
+    throw new Error("Invalid credentials");
+  }
+
+  return sanitizeUser(user);
+}
+
+export async function createSession(user: Omit<SelectUser, "password">) {
+  const token = randomBytes(32).toString("hex");
+  const session: SessionRecord = {
+    token,
+    user,
+    createdAt: new Date(),
+  };
+
+  await storage.saveSession(session);
+  return session;
+}
+
+export async function revokeSession(token: string) {
+  if (!token) return;
+  await storage.deleteSession(token);
 }
 
 export { hashPassword, comparePasswords } from "chittyauth";
