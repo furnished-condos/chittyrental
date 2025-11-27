@@ -22,6 +22,7 @@ import mercuryRoutes from './routes/mercury';
 import staticIpRoutes from './routes/static-ip-routes';
 import tenantsRoutes from './routes/tenants';
 import complianceRoutes from './routes/compliance';
+import chittyAppsRoutes from './routes/chittyapps';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
@@ -47,6 +48,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/static-ip', staticIpRoutes);
   app.use('/api/tenants', tenantsRoutes);
   app.use('/api/compliance', complianceRoutes);
+  app.use('/api/chittyapps', chittyAppsRoutes);
 
   const httpServer = createServer(app);
   return httpServer;
