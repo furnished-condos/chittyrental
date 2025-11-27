@@ -155,3 +155,30 @@ Planned enhancements to API integrations:
 3. **Batching**: Implement request batching for bulk operations
 4. **Monitoring**: Add integration status monitoring dashboard
 5. **Sync History**: Track and display synchronization history
+
+## ChittyApps Integration
+
+**Purpose**: Provide ChittyOS-native workflows for payments, ledgering, and reception coordination.
+
+**Features Implemented**:
+- Authorization holds with tier limits for security deposits (ChittyCharge)
+- Immutable ledger entries with property-level filtering (ChittyLedger)
+- Reception event intake and status tracking (ChittyReception)
+
+**API Endpoints**:
+- `GET /api/chittyapps/charge/holds` - List authorization holds with optional status/property/tier filters
+- `GET /api/chittyapps/charge/tier-limits` - Return authorization hold limits per tier
+- `POST /api/chittyapps/charge/holds` - Create a new authorization hold
+- `POST /api/chittyapps/charge/holds/:holdId/capture` - Capture an existing hold
+- `POST /api/chittyapps/charge/holds/:holdId/release` - Release an authorization hold
+- `POST /api/chittyapps/ledger/entries` - Create a new ledger entry
+- `GET /api/chittyapps/ledger/entries` - Query ledger entries with filters
+- `POST /api/chittyapps/reception/events` - Register a reception or check-in event
+- `POST /api/chittyapps/reception/events/:eventId/status` - Update reception event status
+- `GET /api/chittyapps/reception/events` - List reception events with optional filters
+
+**Runtime modes**:
+- **Live**: Provide `CHITTYAPPS_BASE_URL` and `CHITTYAPPS_API_KEY` (and optionally set `CHITTYAPPS_MODE=live`) to forward all operations directly to the managed ChittyApps endpoints.
+- **Mock with fallback**: If credentials are absent or a live call fails, the mock in-memory implementation is used by default. Disable fallback with `CHITTYAPPS_ALLOW_MOCK_FALLBACK=false`.
+
+The server returns an `X-ChittyApps-Mode` response header to indicate whether each request used live or mock behavior.
