@@ -29,12 +29,14 @@ const DocumentCategories: Record<string, DocumentCategoryDefinition> = {
     subcategories: []
   }
 };
+
+const DOCUMENT_CATEGORY_VALUES = Object.values(DocumentCategories);
 import { googleDriveService } from '../services/google-drive';
 import { analyzeLegalDocument } from '../services/analysis';
 
 // ES module dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const DOCUMENT_CATEGORY_VALUES = Object.keys(DocumentCategories);
 
 // Add Multer types
 declare global {
@@ -145,8 +147,10 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
     }
 
     // Validate top-level category
+ codex/update-documentcategories-and-file-response
     const validTopCategories = Object.keys(DocumentCategories);
 
+ main
     if (!validTopCategories.includes(category)) {
       return res.status(400).json({ 
         error: 'Invalid category',
