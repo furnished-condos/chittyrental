@@ -10,6 +10,7 @@ import expenseRoutes from './routes/expenses';
 import documentsRouter from './routes/documents';
 import analysisRoutes from './routes/analysis';
 import usersRoutes from './routes/users';
+import legacyUserRoutes from './routes/legacy-user';
 import bookkeepingRoutes from './routes/bookkeeping';
 import waveChittyRoutes from './routes/wave-chitty';
 import assetsRoutes from './routes/assets';
@@ -20,11 +21,14 @@ import quickbooksRoutes from './routes/quickbooks';
 import mercuryRoutes from './routes/mercury';
 import staticIpRoutes from './routes/static-ip-routes';
 import tenantsRoutes from './routes/tenants';
+import complianceRoutes from './routes/compliance';
+import chittyAppsRoutes from './routes/chittyapps';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
 
   // Register routes
+  app.use('/api/user', legacyUserRoutes);
   app.use('/api/users', usersRoutes);
   app.use('/api/openphone', openPhoneRoutes);
   app.use('/api/communications', communicationsRoutes);
@@ -43,6 +47,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/mercury', mercuryRoutes);
   app.use('/api/static-ip', staticIpRoutes);
   app.use('/api/tenants', tenantsRoutes);
+  app.use('/api/compliance', complianceRoutes);
+  app.use('/api/chittyapps', chittyAppsRoutes);
 
   const httpServer = createServer(app);
   return httpServer;
