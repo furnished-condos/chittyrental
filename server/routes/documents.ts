@@ -5,13 +5,30 @@ import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import { DocumentOrganizer } from '../services/document-organizer';
 
+interface DocumentCategoryDefinition {
+  label: string;
+  subcategories: string[];
+}
+
 // Define document categories here since it's not exported from document-organizer
-const DocumentCategories = {
-  LEGAL: 'legal',
-  COMMUNICATION: 'communication',
-  FINANCIAL: 'financial',
-  GENERAL: 'general'
-} as const;
+const DocumentCategories: Record<string, DocumentCategoryDefinition> = {
+  legal: {
+    label: 'Legal',
+    subcategories: ['court_filings', 'motions', 'orders', 'evidence']
+  },
+  communication: {
+    label: 'Communication',
+    subcategories: ['email', 'letters', 'transcripts']
+  },
+  financial: {
+    label: 'Financial',
+    subcategories: ['invoices', 'expenses', 'reports']
+  },
+  general: {
+    label: 'General',
+    subcategories: []
+  }
+};
 
 const DOCUMENT_CATEGORY_VALUES = Object.values(DocumentCategories);
 import { googleDriveService } from '../services/google-drive';
@@ -19,7 +36,7 @@ import { analyzeLegalDocument } from '../services/analysis';
 
 // ES module dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const DOCUMENT_CATEGORY_VALUES = Object.keys(DocumentCategories);
 
 // Add Multer types
 declare global {
@@ -83,24 +100,24 @@ router.get('/', async (req: Request, res: Response) => {
     // Group files by category and subcategory for easier frontend consumption
     const groupedFiles = files.reduce((acc: any, file) => {
       const { category, subcategory } = file;
-      
+
       if (!acc[category]) {
         acc[category] = {};
       }
-      
-      const subCat = subcategory || 'general';
+
+      const subCat = subcategory || 'uncategorized';
       if (!acc[category][subCat]) {
         acc[category][subCat] = [];
       }
-      
+
       acc[category][subCat].push(file);
       return acc;
     }, {});
-    
+
     res.json({
       files,
       groupedFiles,
-      categories: DOCUMENT_CATEGORY_VALUES
+      categories: DocumentCategories
     });
   } catch (error) {
     console.error('Error listing documents:', error);
@@ -123,10 +140,17 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
     
     // Get category and subcategory information
     let { category = 'general', subcategory, analyze = false } = req.body;
-    
+
+    category = String(category).toLowerCase();
+    if (subcategory) {
+      subcategory = String(subcategory).toLowerCase();
+    }
+
     // Validate top-level category
-    const validTopCategories = DOCUMENT_CATEGORY_VALUES;
-    
+ codex/update-documentcategories-and-file-response
+    const validTopCategories = Object.keys(DocumentCategories);
+
+ main
     if (!validTopCategories.includes(category)) {
       return res.status(400).json({ 
         error: 'Invalid category',
@@ -136,7 +160,13 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
     
     // Validate subcategory if provided
     if (subcategory) {
-      // Subcategory validation can be implemented once the category map includes them
+      const validSubcategories = DocumentCategories[category]?.subcategories ?? [];
+      if (validSubcategories.length > 0 && !validSubcategories.includes(subcategory)) {
+        return res.status(400).json({
+          error: 'Invalid subcategory',
+          validSubcategories: validSubcategories
+        });
+      }
     }
     
     // Clean up the filename
