@@ -281,99 +281,7 @@ export class DocumentOrganizer {
     };
   }
 
-  public async createPackage(fileReferences: string[], packageName: string, options?: PackageOptions): Promise<string> {
-    if (!fileReferences || fileReferences.length === 0) {
-      throw new Error('No files provided for packaging');
-    }
-
-    const cleanedPackageName = this.cleanupFilename(packageName || `package-${Date.now()}`).replace(/\.[^.]+$/, '');
-    const packageFileName = `${cleanedPackageName}.json`;
-    const tempDir = await this.ensureTempDir();
-    const packagePath = path.join(tempDir, `${Date.now()}-${packageFileName}`);
-
-    const files: PackageEntry[] = [];
-
-    for (const reference of fileReferences) {
-      const { buffer, sourceFileName, storageKey } = await this.resolveReference(reference);
-      const data = buffer.toString('base64');
-      const entry: PackageEntry = {
-        fileName: sourceFileName,
-        storageKey,
-        size: buffer.length,
-        data
-      };
-
-      if (options?.includeMetadata) {
-        const preview = !this.isBinaryContent(buffer)
-          ? buffer.toString('utf8').substring(0, 200)
-          : undefined;
-        entry.metadata = {
-          preview,
-          detectedCategory: this.categorizeDocument(sourceFileName, preview)
-        };
-      }
-
-      files.push(entry);
-    }
-
-    const payload: PackagePayload = {
-      version: 1,
-      createdAt: new Date().toISOString(),
-      options: {
-        compress: Boolean(options?.compress),
-        includeMetadata: Boolean(options?.includeMetadata)
-      },
-      files
-    };
-
-    if (options?.password) {
-      payload.passwordHash = this.hashPassword(options.password);
-    }
-
-    await fsPromises.writeFile(packagePath, JSON.stringify(payload, null, 2), 'utf8');
-
-    return packagePath;
-  }
-
-  public async extractPackage(packagePath: string, options?: ExtractOptions): Promise<Array<{ fileName: string; path: string }>> {
-    const exists = await this.fileExists(packagePath);
-    if (!exists) {
-      throw new Error(`Package file not found at ${packagePath}`);
-    }
-
-    const raw = await fsPromises.readFile(packagePath, 'utf8');
-    const payload = JSON.parse(raw) as PackagePayload;
-
-    if (payload.passwordHash) {
-      if (!options?.password || this.hashPassword(options.password) !== payload.passwordHash) {
-        throw new Error('Invalid password for package extraction');
-      }
-    }
-
-    const allowed = options?.onlyFiles?.length ? new Set(options.onlyFiles) : undefined;
-    const excluded = options?.excludeFiles?.length ? new Set(options.excludeFiles) : undefined;
-
-    const tempDir = await this.ensureTempDir();
-    const extracted: Array<{ fileName: string; path: string }> = [];
-
-    for (const entry of payload.files) {
-      if (allowed && !allowed.has(entry.fileName)) {
-        continue;
-      }
-      if (excluded && excluded.has(entry.fileName)) {
-        continue;
-      }
-
-      const filePath = path.join(tempDir, `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${entry.fileName}`);
-      const buffer = Buffer.from(entry.data, 'base64');
-      await fsPromises.writeFile(filePath, buffer);
-      extracted.push({ fileName: entry.fileName, path: filePath });
-    }
-
-    return extracted;
-  }
-
-  async listOrganizedFiles(): Promise<{ path: string; category: string; subcategory?: string }[]> {
+  async listOrganizedFiles(): Promise<DocumentFileSummary[]> {
     const files = await this.objectStorage.list();
     if (!files.ok) {
       throw new Error('Failed to list files');
@@ -383,19 +291,31 @@ export class DocumentOrganizer {
       .filter((file) => file.name.startsWith('ARIAS_V_BIANCHI/'))
       .map((file) => {
         const parts = file.name.split('/');
-        const category = parts[1] || 'unknown';
-        let subcategory: string | undefined;
+        const fileName = parts[parts.length - 1];
+        const category = (parts[1] || 'unknown').toLowerCase();
+        const potentialDate = parts.length > 2 ? parts[parts.length - 2] : undefined;
+        const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+        const dateAdded = potentialDate && datePattern.test(potentialDate) ? potentialDate : 'unknown';
 
-        if (parts.length > 3) {
-          subcategory = parts[2];
-        } else if (parts.length > 2 && !/^\d{4}-\d{2}-\d{2}$/.test(parts[2] || '')) {
-          subcategory = parts[2];
+        let subcategory: string | undefined;
+        if (dateAdded !== 'unknown') {
+          const subcategorySegments = parts.slice(2, parts.length - 2);
+          if (subcategorySegments.length > 0) {
+            subcategory = subcategorySegments.join('/').toLowerCase();
+          }
+        } else {
+          const subcategorySegments = parts.slice(2, parts.length - 1);
+          if (subcategorySegments.length > 0) {
+            subcategory = subcategorySegments.join('/').toLowerCase();
+          }
         }
 
         return {
           path: file.name,
           category,
-          subcategory
+          subcategory,
+          dateAdded,
+          fileName
         };
       });
   }

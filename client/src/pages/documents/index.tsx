@@ -40,6 +40,28 @@ import axios from 'axios';
 import { useToast } from '@/hooks/use-toast';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 
+const formatLabel = (value: string): string => {
+  if (!value) {
+    return '';
+  }
+
+  return value
+    .split('/')
+    .map((segment) =>
+      segment
+        .split(/[-_]/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ')
+    )
+    .join(' / ');
+};
+
+interface CategoryDefinition {
+  label: string;
+  subcategories: string[];
+}
+
 interface DocumentFile {
   path: string;
   category: string;
@@ -51,7 +73,7 @@ interface DocumentFile {
 interface DocumentsResponse {
   files: DocumentFile[];
   groupedFiles: Record<string, Record<string, DocumentFile[]>>;
-  categories: string[];
+  categories: Record<string, CategoryDefinition>;
 }
 
 export default function DocumentsPage() {
@@ -68,21 +90,61 @@ export default function DocumentsPage() {
     refetchOnWindowFocus: false,
   });
 
+  const categoryDefinitions = React.useMemo<Record<string, CategoryDefinition>>(
+    () => data?.categories ?? {},
+    [data?.categories]
+  );
+
+  const getCategoryLabel = React.useCallback(
+    (categoryId: string) =>
+      categoryDefinitions[categoryId]?.label ?? formatLabel(categoryId),
+    [categoryDefinitions]
+  );
+
+  const getSubcategoryLabel = React.useCallback(
+    (categoryId: string, subcategory?: string) => {
+      if (!subcategory) {
+        return '';
+      }
+
+      const normalizedSubcategory = subcategory.toLowerCase();
+      const definition = categoryDefinitions[categoryId];
+      if (definition?.subcategories?.length) {
+        const match = definition.subcategories.find(
+          (item) => item.toLowerCase() === normalizedSubcategory
+        );
+        if (match) {
+          return formatLabel(match);
+        }
+      }
+
+      return formatLabel(subcategory);
+    },
+    [categoryDefinitions]
+  );
+
   // Filter files based on search term and category
   const filteredFiles = React.useMemo(() => {
     if (!data?.files) return [];
-    
+
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
     return data.files.filter(file => {
-      const matchesSearch = searchTerm === '' || 
-        file.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        file.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (file.subcategory && file.subcategory.toLowerCase().includes(searchTerm.toLowerCase()));
-      
+      const categoryLabel = getCategoryLabel(file.category).toLowerCase();
+      const subcategoryLabel = file.subcategory
+        ? getSubcategoryLabel(file.category, file.subcategory).toLowerCase()
+        : '';
+
+      const matchesSearch = normalizedSearch === '' ||
+        file.fileName.toLowerCase().includes(normalizedSearch) ||
+        categoryLabel.includes(normalizedSearch) ||
+        (subcategoryLabel && subcategoryLabel.includes(normalizedSearch));
+
       const matchesCategory = selectedCategory === 'all' || file.category === selectedCategory;
-      
+
       return matchesSearch && matchesCategory;
     });
-  }, [data?.files, searchTerm, selectedCategory]);
+  }, [data?.files, getCategoryLabel, getSubcategoryLabel, searchTerm, selectedCategory]);
 
   // Handle file upload
   const handleUpload = async () => {
@@ -193,7 +255,7 @@ export default function DocumentsPage() {
     const categoryColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       legal: "secondary",
       court: "destructive",
-      communications: "default",
+      communication: "default",
       financial: "default",
       media: "outline",
       general: "outline",
@@ -285,9 +347,9 @@ export default function DocumentsPage() {
                       value={uploadCategory}
                       onChange={(e) => setUploadCategory(e.target.value)}
                     >
-                      {data?.categories.map((category) => (
-                        <option key={category} value={category}>
-                          {category.charAt(0).toUpperCase() + category.slice(1)}
+                      {Object.entries(categoryDefinitions).map(([categoryId, definition]) => (
+                        <option key={categoryId} value={categoryId}>
+                          {definition.label}
                         </option>
                       ))}
                     </select>
@@ -330,9 +392,9 @@ export default function DocumentsPage() {
             onChange={(e) => setSelectedCategory(e.target.value)}
           >
             <option value="all">All Categories</option>
-            {data?.categories.map((category) => (
-              <option key={category} value={category}>
-                {category.charAt(0).toUpperCase() + category.slice(1)}
+            {Object.entries(categoryDefinitions).map(([categoryId, definition]) => (
+              <option key={categoryId} value={categoryId}>
+                {definition.label}
               </option>
             ))}
           </select>
@@ -378,8 +440,8 @@ export default function DocumentsPage() {
                           <div className="col-span-4 font-medium truncate">{file.fileName}</div>
                           <div className="col-span-3">
                             <Badge variant={getCategoryColor(file.category)}>
-                              {file.category}
-                              {file.subcategory && `/${file.subcategory}`}
+                              {getCategoryLabel(file.category)}
+                              {file.subcategory && ` / ${getSubcategoryLabel(file.category, file.subcategory)}`}
                             </Badge>
                           </div>
                           <div className="col-span-3 flex items-center">
@@ -430,7 +492,7 @@ export default function DocumentsPage() {
                           <AccordionTrigger className="px-4 hover:no-underline">
                             <div className="flex items-center">
                               <Badge variant={getCategoryColor(category)} className="mr-2">
-                                {category}
+                                {getCategoryLabel(category)}
                               </Badge>
                               <span>
                                 {Object.values(subcategories).flat().length} documents
@@ -441,7 +503,7 @@ export default function DocumentsPage() {
                             {Object.entries(subcategories).map(([subcategory, files]) => (
                               <div key={subcategory} className="mb-4">
                                 <h4 className="font-medium text-sm mb-2 px-4 text-muted-foreground">
-                                  {subcategory.charAt(0).toUpperCase() + subcategory.slice(1)}
+                                  {getSubcategoryLabel(category, subcategory) || formatLabel(subcategory)}
                                 </h4>
                                 <div className="border rounded-md">
                                   {files
