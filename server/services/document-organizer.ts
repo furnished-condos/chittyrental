@@ -8,8 +8,29 @@ interface OrganizedDocument {
   fileName: string;
   originalPath: string;
   newPath: string;
-  category: string;
-  analysisResult?: any;
+  category: DocumentCategory;
+  subcategory?: string;
+}
+
+interface DocumentPackageOptions {
+  compress?: boolean;
+  includeMetadata?: boolean;
+  password?: string;
+}
+
+interface ExtractPackageOptions {
+  password?: string;
+  onlyFiles?: string[];
+  excludeFiles?: string[];
+}
+
+interface ParsedDocumentResult {
+  fileName: string;
+  extension: string;
+  size: number;
+  categoryGuess: DocumentCategory;
+  textPreview?: string;
+  metadata?: Record<string, unknown>;
 }
 
 interface UploadOptions {

@@ -154,7 +154,7 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
     if (!validTopCategories.includes(category)) {
       return res.status(400).json({ 
         error: 'Invalid category',
-        validCategories: validTopCategories
+        validCategories: Object.values(DocumentCategories)
       });
     }
     
@@ -257,7 +257,8 @@ router.post('/upload', upload.single('document'), async (req: Request & { file?:
         size: req.file.size,
         storageKey,
         category,
-        uploadDate: new Date().toISOString(),
+        subcategory: sanitizedSubcategory,
+        dateAdded: new Date().toISOString(),
         googleDrive: driveFileId ? { fileId: driveFileId, url: driveUrl } : undefined
       },
       analysis: analysisResult
