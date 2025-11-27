@@ -10,7 +10,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 
   try {
-    const session = await storage.get(`session:${token}`);
+    const session = await storage.getSession(token);
     if (!session) {
       return res.status(401).json({ error: 'Invalid or expired session' });
     }

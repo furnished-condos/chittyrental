@@ -1,8 +1,17 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo.server"
+    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo.server",
+    "isolatedModules": true
   },
-  "include": ["server/**/*", "shared/**/*"],
-  "exclude": ["node_modules", "build", "dist", "**/*.test.ts"]
+  "include": [
+    "server/**/*",
+    "shared/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "**/*.test.ts"
+  ]
 }
