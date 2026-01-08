@@ -1,6 +1,6 @@
 # API Integrations Documentation
 
-This document provides detailed information about the external services integrated with the Rental Management Portal.
+This document provides detailed information about the external services integrated with the ChittyRental Management Portal.
 
 ## Overview of Integrations
 
