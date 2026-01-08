@@ -1,14 +1,14 @@
-# ARIBIA Rental Portal Architecture
+# ChittyRental Portal Architecture
 
 ## System Overview
 
-The ARIBIA Rental Management Portal is designed as a modern web application with a React frontend and Node.js backend. The architecture follows a service-oriented approach with clear separation of concerns and integration with multiple third-party services.
+The ChittyRental Management Portal is designed as a modern web application with a React frontend and Node.js backend. The architecture follows a service-oriented approach with clear separation of concerns and integration with multiple third-party services.
 
 ## Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    ARIBIA Rental Portal                          │
+│                    ChittyRental Portal                          │
 ├─────────────┬─────────────────────────────┬────────────────────┤
 │             │                             │                    │
 │  Property   │        Tenant               │    Admin           │
