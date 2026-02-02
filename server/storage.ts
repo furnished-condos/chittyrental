@@ -1,4 +1,4 @@
-import { User, InsertUser, Property, MaintenanceRequest, Advertisement, InsertAdvertisement, Transaction, InsertTransaction, FinancialReport, InsertFinancialReport, Payment, MercuryAccount, InsertMercuryAccount, MercuryTransaction, InsertMercuryTransaction, OpenPhoneLine, InsertOpenPhoneLine, OpenPhoneContact, InsertOpenPhoneContact, OpenPhoneCall, InsertOpenPhoneCall, OpenPhoneMessage, InsertOpenPhoneMessage, Asset, StaticIpConfig, Tenant, InsertTenant } from "@shared/schema";
+import { User, InsertUser, Property, MaintenanceRequest, Advertisement, InsertAdvertisement, Transaction, InsertTransaction, FinancialReport, InsertFinancialReport, Payment, MercuryAccount, InsertMercuryAccount, MercuryTransaction, InsertMercuryTransaction, OpenPhoneLine, InsertOpenPhoneLine, OpenPhoneContact, InsertOpenPhoneContact, OpenPhoneCall, InsertOpenPhoneCall, OpenPhoneMessage, InsertOpenPhoneMessage, Asset, StaticIpConfig, Tenant, InsertTenant, MarketAreaSignal, InsertMarketAreaSignal, PricingAlert, InsertPricingAlert, ExpansionOpportunity, InsertExpansionOpportunity, ExitTimingSignal, InsertExitTimingSignal, MarketIntelligenceReport, InsertMarketIntelligenceReport } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 
@@ -115,6 +115,28 @@ export interface IStorage {
   getSession(token: string): Promise<SessionRecord | undefined>;
   deleteSession(token: string): Promise<void>;
 
+  // Market Intelligence operations (read-only dataset)
+  createMarketAreaSignal(signal: InsertMarketAreaSignal): Promise<MarketAreaSignal>;
+  getMarketAreaSignals(microArea: string, city?: string): Promise<MarketAreaSignal[]>;
+  getMarketAreaSignalsByCity(city: string): Promise<MarketAreaSignal[]>;
+  getAllMarketAreaSignals(): Promise<MarketAreaSignal[]>;
+
+  createPricingAlert(alert: InsertPricingAlert): Promise<PricingAlert>;
+  getPricingAlerts(propertyId?: number): Promise<PricingAlert[]>;
+  updatePricingAlert(id: number, updates: Partial<PricingAlert>): Promise<PricingAlert>;
+
+  createExpansionOpportunity(opportunity: InsertExpansionOpportunity): Promise<ExpansionOpportunity>;
+  getExpansionOpportunities(reviewed?: boolean): Promise<ExpansionOpportunity[]>;
+  updateExpansionOpportunity(id: number, updates: Partial<ExpansionOpportunity>): Promise<ExpansionOpportunity>;
+
+  createExitTimingSignal(signal: InsertExitTimingSignal): Promise<ExitTimingSignal>;
+  getExitTimingSignals(propertyId?: number): Promise<ExitTimingSignal[]>;
+
+  createMarketIntelligenceReport(report: InsertMarketIntelligenceReport): Promise<MarketIntelligenceReport>;
+  getMarketIntelligenceReports(businessAccountId?: number): Promise<MarketIntelligenceReport[]>;
+  getMarketIntelligenceReportsPendingReview(): Promise<MarketIntelligenceReport[]>;
+  updateMarketIntelligenceReport(id: number, updates: Partial<MarketIntelligenceReport>): Promise<MarketIntelligenceReport>;
+
   sessionStore: session.Store;
 }
 
@@ -136,6 +158,12 @@ export class MemStorage implements IStorage {
   private staticIpConfigs: Map<number, StaticIpConfig>;
   private tenants: Map<number, Tenant>;
   private sessions: Map<string, SessionRecord>;
+  // Market Intelligence data stores (read-only dataset)
+  private marketAreaSignals: Map<number, MarketAreaSignal>;
+  private pricingAlerts: Map<number, PricingAlert>;
+  private expansionOpportunities: Map<number, ExpansionOpportunity>;
+  private exitTimingSignals: Map<number, ExitTimingSignal>;
+  private marketIntelligenceReports: Map<number, MarketIntelligenceReport>;
   private currentIds: { [key: string]: number };
   private lastOpenPhoneSyncDate: Date | undefined;
   sessionStore: session.Store;
@@ -158,6 +186,12 @@ export class MemStorage implements IStorage {
     this.staticIpConfigs = new Map();
     this.tenants = new Map();
     this.sessions = new Map();
+    // Market Intelligence stores
+    this.marketAreaSignals = new Map();
+    this.pricingAlerts = new Map();
+    this.expansionOpportunities = new Map();
+    this.exitTimingSignals = new Map();
+    this.marketIntelligenceReports = new Map();
     this.currentIds = {
       users: 1,
       properties: 1,
@@ -174,7 +208,12 @@ export class MemStorage implements IStorage {
       openPhoneMessages: 1,
       assets: 1,
       staticIpConfigs: 1,
-      tenants: 1
+      tenants: 1,
+      marketAreaSignals: 1,
+      pricingAlerts: 1,
+      expansionOpportunities: 1,
+      exitTimingSignals: 1,
+      marketIntelligenceReports: 1
     };
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000,
@@ -774,7 +813,7 @@ export class MemStorage implements IStorage {
 
     // Check if a config already exists for this business account
     let existingConfig: StaticIpConfig | undefined;
-    
+
     if (config.businessAccountId) {
       existingConfig = Array.from(this.staticIpConfigs.values())
         .find(c => c.businessAccountId === config.businessAccountId);
@@ -804,6 +843,188 @@ export class MemStorage implements IStorage {
       this.staticIpConfigs.set(id, newConfig);
       return newConfig;
     }
+  }
+
+  // ============================================================================
+  // MARKET INTELLIGENCE OPERATIONS (Read-only dataset)
+  // ============================================================================
+
+  // Market Area Signals
+  async createMarketAreaSignal(signal: InsertMarketAreaSignal): Promise<MarketAreaSignal> {
+    const id = this.currentIds.marketAreaSignals++;
+    const newSignal: MarketAreaSignal = {
+      ...signal,
+      id,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      country: signal.country ?? 'DE',
+      postalCode: signal.postalCode ?? null,
+      medianRentFurnished: signal.medianRentFurnished ?? null,
+      medianRentUnfurnished: signal.medianRentUnfurnished ?? null,
+      furnishedPremiumPercent: signal.furnishedPremiumPercent ?? null,
+      rentP25Furnished: signal.rentP25Furnished ?? null,
+      rentP75Furnished: signal.rentP75Furnished ?? null,
+      rentP25Unfurnished: signal.rentP25Unfurnished ?? null,
+      rentP75Unfurnished: signal.rentP75Unfurnished ?? null,
+      medianDaysOnMarket: signal.medianDaysOnMarket ?? null,
+      avgDaysOnMarket: signal.avgDaysOnMarket ?? null,
+      newListingsWeekly: signal.newListingsWeekly ?? null,
+      priceReductionFrequency: signal.priceReductionFrequency ?? null,
+      avgPriceReductionPercent: signal.avgPriceReductionPercent ?? null,
+      inquiryVelocityIndex: signal.inquiryVelocityIndex ?? null,
+      absorptionRate: signal.absorptionRate ?? null,
+      sampleSize: signal.sampleSize ?? null
+    };
+    this.marketAreaSignals.set(id, newSignal);
+    return newSignal;
+  }
+
+  async getMarketAreaSignals(microArea: string, city?: string): Promise<MarketAreaSignal[]> {
+    return Array.from(this.marketAreaSignals.values())
+      .filter(signal => {
+        const matchesMicroArea = signal.microArea.toLowerCase() === microArea.toLowerCase();
+        const matchesCity = city ? signal.city.toLowerCase() === city.toLowerCase() : true;
+        return matchesMicroArea && matchesCity;
+      })
+      .sort((a, b) => new Date(b.signalDate).getTime() - new Date(a.signalDate).getTime());
+  }
+
+  async getMarketAreaSignalsByCity(city: string): Promise<MarketAreaSignal[]> {
+    return Array.from(this.marketAreaSignals.values())
+      .filter(signal => signal.city.toLowerCase() === city.toLowerCase())
+      .sort((a, b) => new Date(b.signalDate).getTime() - new Date(a.signalDate).getTime());
+  }
+
+  async getAllMarketAreaSignals(): Promise<MarketAreaSignal[]> {
+    return Array.from(this.marketAreaSignals.values())
+      .sort((a, b) => new Date(b.signalDate).getTime() - new Date(a.signalDate).getTime());
+  }
+
+  // Pricing Alerts
+  async createPricingAlert(alert: InsertPricingAlert): Promise<PricingAlert> {
+    const id = this.currentIds.pricingAlerts++;
+    const newAlert: PricingAlert = {
+      ...alert,
+      id,
+      createdAt: new Date(),
+      marketAreaSignalId: alert.marketAreaSignalId ?? null,
+      justificationNotes: alert.justificationNotes ?? null,
+      isAcknowledged: alert.isAcknowledged ?? false,
+      acknowledgedBy: alert.acknowledgedBy ?? null,
+      acknowledgedAt: alert.acknowledgedAt ?? null
+    };
+    this.pricingAlerts.set(id, newAlert);
+    return newAlert;
+  }
+
+  async getPricingAlerts(propertyId?: number): Promise<PricingAlert[]> {
+    return Array.from(this.pricingAlerts.values())
+      .filter(alert => propertyId ? alert.propertyId === propertyId : true)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async updatePricingAlert(id: number, updates: Partial<PricingAlert>): Promise<PricingAlert> {
+    const existing = this.pricingAlerts.get(id);
+    if (!existing) throw new Error('Pricing alert not found');
+
+    const updated = { ...existing, ...updates };
+    this.pricingAlerts.set(id, updated);
+    return updated;
+  }
+
+  // Expansion Opportunities
+  async createExpansionOpportunity(opportunity: InsertExpansionOpportunity): Promise<ExpansionOpportunity> {
+    const id = this.currentIds.expansionOpportunities++;
+    const newOpportunity: ExpansionOpportunity = {
+      ...opportunity,
+      id,
+      createdAt: new Date(),
+      rationale: opportunity.rationale ?? null,
+      isReviewed: opportunity.isReviewed ?? false,
+      reviewedBy: opportunity.reviewedBy ?? null,
+      reviewedAt: opportunity.reviewedAt ?? null,
+      expiresAt: opportunity.expiresAt ?? null
+    };
+    this.expansionOpportunities.set(id, newOpportunity);
+    return newOpportunity;
+  }
+
+  async getExpansionOpportunities(reviewed?: boolean): Promise<ExpansionOpportunity[]> {
+    return Array.from(this.expansionOpportunities.values())
+      .filter(opp => reviewed !== undefined ? opp.isReviewed === reviewed : true)
+      .sort((a, b) => Number(b.opportunityScore) - Number(a.opportunityScore));
+  }
+
+  async updateExpansionOpportunity(id: number, updates: Partial<ExpansionOpportunity>): Promise<ExpansionOpportunity> {
+    const existing = this.expansionOpportunities.get(id);
+    if (!existing) throw new Error('Expansion opportunity not found');
+
+    const updated = { ...existing, ...updates };
+    this.expansionOpportunities.set(id, updated);
+    return updated;
+  }
+
+  // Exit Timing Signals
+  async createExitTimingSignal(signal: InsertExitTimingSignal): Promise<ExitTimingSignal> {
+    const id = this.currentIds.exitTimingSignals++;
+    const newSignal: ExitTimingSignal = {
+      ...signal,
+      id,
+      createdAt: new Date(),
+      propertyId: signal.propertyId ?? null,
+      projectedWeeksToDecline: signal.projectedWeeksToDecline ?? null,
+      analysisNotes: signal.analysisNotes ?? null
+    };
+    this.exitTimingSignals.set(id, newSignal);
+    return newSignal;
+  }
+
+  async getExitTimingSignals(propertyId?: number): Promise<ExitTimingSignal[]> {
+    return Array.from(this.exitTimingSignals.values())
+      .filter(signal => propertyId ? signal.propertyId === propertyId : true)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  // Market Intelligence Reports
+  async createMarketIntelligenceReport(report: InsertMarketIntelligenceReport): Promise<MarketIntelligenceReport> {
+    const id = this.currentIds.marketIntelligenceReports++;
+    const newReport: MarketIntelligenceReport = {
+      ...report,
+      id,
+      createdAt: new Date(),
+      businessAccountId: report.businessAccountId ?? null,
+      propertyId: report.propertyId ?? null,
+      dataSourcesUsed: report.dataSourcesUsed ?? null,
+      signalDateRange: report.signalDateRange ?? null,
+      requiresReview: report.requiresReview ?? true,
+      reviewedBy: report.reviewedBy ?? null,
+      reviewedAt: report.reviewedAt ?? null,
+      reviewNotes: report.reviewNotes ?? null,
+      createdBy: report.createdBy ?? null
+    };
+    this.marketIntelligenceReports.set(id, newReport);
+    return newReport;
+  }
+
+  async getMarketIntelligenceReports(businessAccountId?: number): Promise<MarketIntelligenceReport[]> {
+    return Array.from(this.marketIntelligenceReports.values())
+      .filter(report => businessAccountId ? report.businessAccountId === businessAccountId : true)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async getMarketIntelligenceReportsPendingReview(): Promise<MarketIntelligenceReport[]> {
+    return Array.from(this.marketIntelligenceReports.values())
+      .filter(report => report.requiresReview)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async updateMarketIntelligenceReport(id: number, updates: Partial<MarketIntelligenceReport>): Promise<MarketIntelligenceReport> {
+    const existing = this.marketIntelligenceReports.get(id);
+    if (!existing) throw new Error('Market intelligence report not found');
+
+    const updated = { ...existing, ...updates };
+    this.marketIntelligenceReports.set(id, updated);
+    return updated;
   }
 }
 

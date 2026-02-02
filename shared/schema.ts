@@ -662,3 +662,218 @@ export type InsertOpenPhoneMessage = z.infer<typeof insertOpenPhoneMessageSchema
 // Add Tenant types
 export type Tenant = typeof tenants.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
+
+// ============================================================================
+// MARKET INTELLIGENCE LAYER (Read-Only)
+// External signal ingestion for pricing & positioning intelligence
+// No raw listings stored - derived signals only
+// ============================================================================
+
+// Market Intelligence Signal Types
+export const MarketSignalSource = {
+  IMMOSCOUT24: 'immoscout24',
+  IDEALISTA: 'idealista',
+  ZILLOW: 'zillow',
+  MANUAL: 'manual',
+  AGGREGATED: 'aggregated'
+} as const;
+
+export const FurnishedStatus = {
+  FURNISHED: 'furnished',
+  UNFURNISHED: 'unfurnished',
+  SEMI_FURNISHED: 'semi_furnished'
+} as const;
+
+export const PricingAlertType = {
+  OVERPRICED: 'overpriced',
+  UNDERPRICED: 'underpriced',
+  COMPETITIVE: 'competitive',
+  PREMIUM_JUSTIFIED: 'premium_justified'
+} as const;
+
+// Market Area Signals - aggregated market data per micro-area
+// No individual listings stored, only derived statistics
+export const marketAreaSignals = pgTable("market_area_signals", {
+  id: serial("id").primaryKey(),
+
+  // Geographic scope
+  microArea: text("micro_area").notNull(), // e.g., "Berlin-Mitte", "Munich-Schwabing"
+  city: text("city").notNull(),
+  country: text("country").notNull().default('DE'),
+  postalCode: text("postal_code"),
+
+  // Core rent signals (€/sqm)
+  medianRentFurnished: decimal("median_rent_furnished", { precision: 8, scale: 2 }),
+  medianRentUnfurnished: decimal("median_rent_unfurnished", { precision: 8, scale: 2 }),
+  furnishedPremiumPercent: decimal("furnished_premium_percent", { precision: 5, scale: 2 }), // e.g., 35.50 = 35.5%
+
+  // Rent bands (€/sqm)
+  rentP25Furnished: decimal("rent_p25_furnished", { precision: 8, scale: 2 }),
+  rentP75Furnished: decimal("rent_p75_furnished", { precision: 8, scale: 2 }),
+  rentP25Unfurnished: decimal("rent_p25_unfurnished", { precision: 8, scale: 2 }),
+  rentP75Unfurnished: decimal("rent_p75_unfurnished", { precision: 8, scale: 2 }),
+
+  // Time-on-market signals (days)
+  medianDaysOnMarket: integer("median_days_on_market"),
+  avgDaysOnMarket: integer("avg_days_on_market"),
+
+  // Supply velocity signals
+  newListingsWeekly: integer("new_listings_weekly"),
+  priceReductionFrequency: decimal("price_reduction_frequency", { precision: 5, scale: 2 }), // % of listings with reductions
+  avgPriceReductionPercent: decimal("avg_price_reduction_percent", { precision: 5, scale: 2 }),
+
+  // Demand indicators
+  inquiryVelocityIndex: decimal("inquiry_velocity_index", { precision: 5, scale: 2 }), // relative demand score
+  absorptionRate: decimal("absorption_rate", { precision: 5, scale: 2 }), // % of listings absorbed per week
+
+  // Sample metadata
+  sampleSize: integer("sample_size"), // number of data points aggregated
+  dataSource: text("data_source", {
+    enum: ["immoscout24", "idealista", "zillow", "manual", "aggregated"]
+  }).notNull(),
+  signalDate: timestamp("signal_date").notNull(), // date these signals represent
+
+  // Governance
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Pricing Alerts - flags for over/underpricing vs market bands
+export const pricingAlerts = pgTable("pricing_alerts", {
+  id: serial("id").primaryKey(),
+  propertyId: integer("property_id").references(() => properties.id).notNull(),
+  marketAreaSignalId: integer("market_area_signal_id").references(() => marketAreaSignals.id),
+
+  // Alert details
+  alertType: text("alert_type", {
+    enum: ["overpriced", "underpriced", "competitive", "premium_justified"]
+  }).notNull(),
+  currentRentPerSqm: decimal("current_rent_per_sqm", { precision: 8, scale: 2 }).notNull(),
+  marketMedianPerSqm: decimal("market_median_per_sqm", { precision: 8, scale: 2 }).notNull(),
+  deviationPercent: decimal("deviation_percent", { precision: 5, scale: 2 }).notNull(), // how far from market
+
+  // Justification (for premium_justified cases)
+  justificationNotes: text("justification_notes"), // "Above-market because X"
+
+  // Status
+  isAcknowledged: boolean("is_acknowledged").notNull().default(false),
+  acknowledgedBy: integer("acknowledged_by").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Expansion Opportunities - areas where furnished premium > ops cost
+export const expansionOpportunities = pgTable("expansion_opportunities", {
+  id: serial("id").primaryKey(),
+  marketAreaSignalId: integer("market_area_signal_id").references(() => marketAreaSignals.id).notNull(),
+
+  // Opportunity metrics
+  furnishedPremiumEur: decimal("furnished_premium_eur", { precision: 10, scale: 2 }).notNull(), // monthly premium in EUR
+  estimatedOpsCostEur: decimal("estimated_ops_cost_eur", { precision: 10, scale: 2 }).notNull(),
+  netOpportunityEur: decimal("net_opportunity_eur", { precision: 10, scale: 2 }).notNull(), // premium - ops cost
+  opportunityScore: decimal("opportunity_score", { precision: 5, scale: 2 }).notNull(), // 0-100 composite score
+
+  // Market conditions
+  supplyTrend: text("supply_trend", { enum: ["increasing", "stable", "decreasing"] }).notNull(),
+  demandTrend: text("demand_trend", { enum: ["increasing", "stable", "decreasing"] }).notNull(),
+
+  // Recommendation
+  recommendation: text("recommendation", { enum: ["expand", "hold", "avoid"] }).notNull(),
+  rationale: text("rationale"), // AI-generated explanation
+
+  // Status
+  isReviewed: boolean("is_reviewed").notNull().default(false),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at"), // opportunity validity window
+});
+
+// Exit Timing Signals - rising supply + falling inquiry velocity
+export const exitTimingSignals = pgTable("exit_timing_signals", {
+  id: serial("id").primaryKey(),
+  propertyId: integer("property_id").references(() => properties.id),
+  marketAreaSignalId: integer("market_area_signal_id").references(() => marketAreaSignals.id).notNull(),
+
+  // Signal metrics
+  supplyChangePercent: decimal("supply_change_percent", { precision: 5, scale: 2 }).notNull(), // week-over-week
+  inquiryVelocityChangePercent: decimal("inquiry_velocity_change_percent", { precision: 5, scale: 2 }).notNull(),
+  priceDeclineRisk: text("price_decline_risk", { enum: ["low", "medium", "high", "critical"] }).notNull(),
+
+  // Timing recommendation
+  exitUrgency: text("exit_urgency", { enum: ["none", "monitor", "prepare", "act_now"] }).notNull(),
+  projectedWeeksToDecline: integer("projected_weeks_to_decline"),
+
+  // AI analysis
+  analysisNotes: text("analysis_notes"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Market Intelligence Reports - AI-generated analysis and insights
+export const marketIntelligenceReports = pgTable("market_intelligence_reports", {
+  id: serial("id").primaryKey(),
+  businessAccountId: integer("business_account_id").references(() => businessAccounts.id),
+  propertyId: integer("property_id").references(() => properties.id), // optional, for property-specific reports
+
+  // Report metadata
+  reportType: text("report_type", {
+    enum: ["pricing_analysis", "market_trends", "expansion_scan", "exit_timing", "competitive_position"]
+  }).notNull(),
+  title: text("title").notNull(),
+
+  // Content
+  summary: text("summary").notNull(),
+  insights: text("insights").notNull(), // JSON array of insight strings
+  recommendations: text("recommendations").notNull(), // JSON array of recommendations
+  metrics: text("metrics").notNull(), // JSON object of key metrics
+
+  // Data sources used
+  dataSourcesUsed: text("data_sources_used").array(),
+  signalDateRange: text("signal_date_range"), // e.g., "2024-01-01 to 2024-01-31"
+
+  // Governance - human gate before pricing automation
+  requiresReview: boolean("requires_review").notNull().default(true),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdBy: integer("created_by").references(() => users.id),
+});
+
+// Insert schemas for Market Intelligence (read-only ingestion only)
+export const insertMarketAreaSignalSchema = createInsertSchema(marketAreaSignals).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPricingAlertSchema = createInsertSchema(pricingAlerts).omit({
+  createdAt: true,
+});
+
+export const insertExpansionOpportunitySchema = createInsertSchema(expansionOpportunities).omit({
+  createdAt: true,
+});
+
+export const insertExitTimingSignalSchema = createInsertSchema(exitTimingSignals).omit({
+  createdAt: true,
+});
+
+export const insertMarketIntelligenceReportSchema = createInsertSchema(marketIntelligenceReports).omit({
+  createdAt: true,
+});
+
+// Market Intelligence Types
+export type MarketAreaSignal = typeof marketAreaSignals.$inferSelect;
+export type InsertMarketAreaSignal = z.infer<typeof insertMarketAreaSignalSchema>;
+export type PricingAlert = typeof pricingAlerts.$inferSelect;
+export type InsertPricingAlert = z.infer<typeof insertPricingAlertSchema>;
+export type ExpansionOpportunity = typeof expansionOpportunities.$inferSelect;
+export type InsertExpansionOpportunity = z.infer<typeof insertExpansionOpportunitySchema>;
+export type ExitTimingSignal = typeof exitTimingSignals.$inferSelect;
+export type InsertExitTimingSignal = z.infer<typeof insertExitTimingSignalSchema>;
+export type MarketIntelligenceReport = typeof marketIntelligenceReports.$inferSelect;
+export type InsertMarketIntelligenceReport = z.infer<typeof insertMarketIntelligenceReportSchema>;
