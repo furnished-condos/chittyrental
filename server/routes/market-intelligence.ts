@@ -230,6 +230,9 @@ router.get('/expansion/scan', async (req, res) => {
     const { opsCost } = req.query;
     const estimatedOpsCost = opsCost ? parseFloat(opsCost as string) : undefined;
 
+    if (estimatedOpsCost !== undefined && isNaN(estimatedOpsCost)) {
+      return res.status(400).json({ error: 'opsCost must be a valid number' });
+    }
     const scan = await scanExpansionOpportunities(estimatedOpsCost);
     res.json(scan);
   } catch (error) {
