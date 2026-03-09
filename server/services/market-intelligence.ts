@@ -214,8 +214,13 @@ export async function createPricingAlert(
     ? 'premium_justified'
     : analysis.alertType;
 
+  const property = await storage.getProperty(propertyId);
+  if (!property) {
+    throw new Error('Cannot create alert - property not found');
+  }
+
   const signals = await storage.getMarketAreaSignals(
-    extractMicroArea((await storage.getProperty(propertyId))!.address)
+    extractMicroArea(property.address)
   );
 
   const alertData: InsertPricingAlert = {
