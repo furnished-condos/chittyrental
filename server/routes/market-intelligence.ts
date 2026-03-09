@@ -38,6 +38,9 @@ router.post('/signals', async (req, res) => {
       return res.status(400).json({ error: 'signals array is required' });
     }
 
+    if (signals.length === 0) {
+      return res.status(400).json({ error: 'signals array cannot be empty' });
+    }
     const created = await ingestMarketAreaSignals(signals);
     res.status(201).json({ count: created.length, signals: created });
   } catch (error) {
