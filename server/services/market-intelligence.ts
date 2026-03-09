@@ -360,7 +360,7 @@ export async function scanExpansionOpportunities(
     let recommendation: 'expand' | 'hold' | 'avoid';
     if (netOpportunity > 100 && demandTrend !== 'decreasing' && opportunityScore >= 60) {
       recommendation = 'expand';
-    } else if (netOpportunity < 0 || supplyTrend === 'increasing' && demandTrend === 'decreasing') {
+    } else if ((netOpportunity < 0) || (supplyTrend === 'increasing' && demandTrend === 'decreasing')) {
       recommendation = 'avoid';
     } else {
       recommendation = 'hold';
