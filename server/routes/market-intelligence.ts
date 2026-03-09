@@ -113,7 +113,10 @@ router.get('/pricing/:propertyId', async (req, res) => {
   try {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
-    const propertyId = parseInt(req.params.propertyId);
+    const propertyId = parseInt(req.params.propertyId, 10);
+    if (Number.isNaN(propertyId)) {
+      return res.status(400).json({ error: 'Invalid propertyId parameter' });
+    }
     const analysis = await analyzePricing(propertyId);
 
     if (!analysis) {
