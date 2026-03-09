@@ -151,7 +151,10 @@ export async function analyzePricing(
   }
 
   const latestSignal = signals[0]; // Most recent
-  const sqm = property.squareFeet ? property.squareFeet * 0.092903 : 50; // Convert to sqm, default 50
+  if (!property.squareFeet || property.squareFeet <= 0) {
+    return null; // Cannot perform pricing analysis without valid square footage
+  }
+  const sqm = property.squareFeet * 0.092903; // Convert to sqm
   const currentRentPerSqm = Number(property.rentAmount) / sqm;
   const marketMedianPerSqm = Number(latestSignal.medianRentFurnished) || 0;
 
