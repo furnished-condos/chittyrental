@@ -618,12 +618,29 @@ export async function getPendingReports(): Promise<MarketIntelligenceReport[]> {
 // HELPER FUNCTIONS
 // ============================================================================
 
+/**
+ * Attempt to extract a "micro area" (e.g., neighborhood or district) from a free-form address.
+ *
+ * NOTE: This uses a very naive heuristic and is not suitable for production-grade
+ * geospatial logic. For reliable results, integrate with a proper geocoding service
+ * and derive micro-areas from structured location data.
+ */
 function extractMicroArea(address: string): string {
-  // Simplified extraction - in production, use geocoding
   const parts = address.split(',');
   if (parts.length >= 2) {
-    return parts[parts.length - 2].trim();
+    const candidate = parts[parts.length - 2].trim();
+
+    // Basic validation: avoid returning clearly invalid or empty segments.
+    const isEmpty = candidate.length === 0;
+    const isTooShort = candidate.length < 2;
+    const isMostlyNumeric = /^[0-9\s-]+$/.test(candidate);
+
+    if (!isEmpty && !isTooShort && !isMostlyNumeric) {
+      return candidate;
+    }
   }
+
+  // Fallback: if we cannot confidently extract a micro area, return the full address.
   return address;
 }
 
