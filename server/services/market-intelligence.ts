@@ -433,15 +433,48 @@ export async function analyzeExitTiming(
 
   const latestSignal = signals[0];
 
-  // Calculate change metrics (simplified - in production, compare with historical)
-  const supplyChangePercent = latestSignal.newListingsWeekly
-    ? (latestSignal.newListingsWeekly > 20 ? 15 : 0)
-    : 0;
+  // Calculate change metrics.
+  // Prefer real historical comparison when a previous signal exists; otherwise,
+  // fall back to simple heuristic placeholders based on the latest snapshot only.
+  let supplyChangePercent = 0;
+  let inquiryVelocityChangePercent = 0;
 
-  const inquiryVelocityChangePercent = latestSignal.inquiryVelocityIndex
-    ? (Number(latestSignal.inquiryVelocityIndex) < 0.8 ? -20 : 5)
-    : 0;
+  const previousSignal = signals[1];
 
+  if (previousSignal) {
+    const latestSupply = latestSignal.newListingsWeekly ?? 0;
+    const previousSupply = previousSignal.newListingsWeekly ?? 0;
+
+    if (previousSupply > 0) {
+      supplyChangePercent =
+        ((latestSupply - previousSupply) / previousSupply) * 100;
+    } else if (latestSupply > 0) {
+      // No meaningful baseline; treat any new listings as a large positive change.
+      supplyChangePercent = 100;
+    }
+
+    const latestInquiryIndex = Number(latestSignal.inquiryVelocityIndex ?? 0);
+    const previousInquiryIndex = Number(previousSignal.inquiryVelocityIndex ?? 0);
+
+    if (previousInquiryIndex !== 0) {
+      inquiryVelocityChangePercent =
+        ((latestInquiryIndex - previousInquiryIndex) / previousInquiryIndex) * 100;
+    } else if (latestInquiryIndex !== 0) {
+      // No meaningful baseline; treat any movement away from zero as a large change.
+      inquiryVelocityChangePercent = latestInquiryIndex > 0 ? 100 : -100;
+    }
+  } else {
+    // Fallback: insufficient history to compute a true trend, so use heuristic
+    // placeholders based on the latest snapshot only.
+    if (latestSignal.newListingsWeekly) {
+      supplyChangePercent = latestSignal.newListingsWeekly > 20 ? 15 : 0;
+    }
+
+    if (latestSignal.inquiryVelocityIndex != null) {
+      inquiryVelocityChangePercent =
+        Number(latestSignal.inquiryVelocityIndex) < 0.8 ? -20 : 5;
+    }
+  }
   // Determine risk level
   let priceDeclineRisk: ExitTimingResult['priceDeclineRisk'];
   let exitUrgency: ExitTimingResult['exitUrgency'];
