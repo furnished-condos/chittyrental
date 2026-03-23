@@ -1,0 +1,21 @@
+name = "chittyrental"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets (set via `wrangler secret put`):
+#   DATABASE_URL          — Neon PostgreSQL connection string
+#   CHITTY_AUTH_SERVICE_TOKEN — Service-to-service auth token
+
+[vars]
+ENVIRONMENT = "production"
+CHITTYFINANCE_URL = "https://finance.chitty.cc"
+CHITTYGOV_URL = "https://gov.chitty.cc"
+CHITTYCHARGE_URL = "https://charge.chitty.cc"
+CHITTYCONNECT_URL = "https://connect.chitty.cc"
+SERVICE_NAME = "chittyrental"
+
+[[kv_namespaces]]
+binding = "RENTAL_CACHE"
+id = "TBD_CREATE_VIA_WRANGLER"
+# Create with: wrangler kv namespace create RENTAL_CACHE
