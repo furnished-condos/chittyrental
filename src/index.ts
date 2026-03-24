@@ -9,6 +9,10 @@ import agreements from "./routes/agreements";
 import maintenance from "./routes/maintenance";
 import vrf from "./routes/vrf";
 import rent from "./routes/rent";
+import transactions from "./routes/transactions";
+import reports from "./routes/reports";
+import payments from "./routes/payments";
+import comms from "./routes/comms";
 import wizard from "./routes/wizard";
 
 // ---------------------------------------------------------------------------
@@ -84,6 +88,10 @@ app.route("/api/agreements", agreements);
 app.route("/api/maintenance", maintenance);
 app.route("/api/vrf", vrf);
 app.route("/api/rent", rent);
+app.route("/api/transactions", transactions);
+app.route("/api/reports", reports);
+app.route("/api/payments", payments);
+app.route("/api/comms", comms);
 app.route("/api/wizard", wizard);
 
 export default app;
