@@ -47,14 +47,23 @@ export const crProperties = pgTable("cr_properties", {
   property_type: text("property_type").notNull(), // single_family, multi_unit, condo, etc.
   status: text("status").notNull().default("setup"), // setup | available | occupied | maintenance | inactive
   jurisdiction: text("jurisdiction"),
+  description: text("description"),
   airbnb_id: text("airbnb_id"),
   furnished_finder_id: text("furnished_finder_id"),
   zillow_id: text("zillow_id"),
+  booking_id: text("booking_id"),
+  apartments_id: text("apartments_id"),
   bedrooms: integer("bedrooms"),
   bathrooms: numeric("bathrooms"),
   sqft: integer("sqft"),
   amenities: jsonb("amenities"),
   images: jsonb("images"),
+  rent_amount: numeric("rent_amount"), // default rent for the property
+  rent_currency: text("rent_currency").notNull().default("USD"),
+  security_deposit_amount: numeric("security_deposit_amount"),
+  security_deposit_status: text("security_deposit_status"), // pending | held | released
+  external_id: text("external_id"), // DoorLoop migration ID
+  external_source: text("external_source"),
   gov_asset_id: text("gov_asset_id"),  // ChittyGov asset reference
   cf_property_id: text("cf_property_id"), // ChittyFinance reference
   ...timestamps,
@@ -88,6 +97,11 @@ export const crTenants = pgTable("cr_tenants", {
   phone: text("phone"),
   status: text("status").notNull().default("prospect"), // prospect | application | screening | approved | active | notice | past | rejected
   source: text("source"),
+  background_check_status: text("background_check_status"), // pending | approved | rejected | not_started
+  notes: text("notes"),
+  documents: jsonb("documents"), // array of doc URLs
+  external_id: text("external_id"), // DoorLoop migration ID
+  external_source: text("external_source"), // doorloop | turbotenant | manual
   deleted_at: timestamp("deleted_at", { withTimezone: true }), // GDPR soft-delete
   ...timestamps,
 });
@@ -275,5 +289,84 @@ export const crSyncLog = pgTable("cr_sync_log", {
   error_message: text("error_message"),
   started_at: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   completed_at: timestamp("completed_at", { withTimezone: true }),
+  ...timestamps,
+});
+
+// ---------------------------------------------------------------------------
+// cr_transactions — unified income/expense tracking (migrated from v1)
+// ---------------------------------------------------------------------------
+
+export const crTransactions = pgTable("cr_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  property_id: uuid("property_id").references(() => crProperties.id),
+  amount: numeric("amount").notNull(),
+  currency: text("currency").notNull().default("USD"),
+  type: text("type").notNull(), // income | expense
+  category: text("category").notNull(), // rent | maintenance | utilities | insurance | taxes | mortgage | supplies | cleaning | marketing | other
+  description: text("description").notNull(),
+  date: date("date").notNull(),
+  ai_categorized: boolean("ai_categorized").notNull().default(false),
+  ai_confidence: numeric("ai_confidence"),
+  receipt_url: text("receipt_url"),
+  external_id: text("external_id"),
+  external_source: text("external_source"), // doorloop | mercury | wave | manual | quickbooks | turbotenant | huntington | alianza
+  metadata: jsonb("metadata"),
+  ...timestamps,
+});
+
+// ---------------------------------------------------------------------------
+// cr_financial_reports — periodic reports with AI insights
+// ---------------------------------------------------------------------------
+
+export const crFinancialReports = pgTable("cr_financial_reports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  report_type: text("report_type").notNull(), // monthly | quarterly | annual | custom
+  start_date: date("start_date").notNull(),
+  end_date: date("end_date").notNull(),
+  property_id: uuid("property_id").references(() => crProperties.id),
+  summary: text("summary"),
+  ai_insights: text("ai_insights"),
+  metrics: jsonb("metrics"),
+  ...timestamps,
+});
+
+// ---------------------------------------------------------------------------
+// cr_payments — payment processing (ChittyCharge integration)
+// ---------------------------------------------------------------------------
+
+export const crPayments = pgTable("cr_payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  lease_id: uuid("lease_id").references(() => crLeases.id),
+  tenant_id: uuid("tenant_id").references(() => crTenants.id),
+  amount: numeric("amount").notNull(),
+  currency: text("currency").notNull().default("USD"),
+  processing_fee: numeric("processing_fee"),
+  status: text("status").notNull().default("pending"), // pending | completed | failed | refunded
+  description: text("description"),
+  due_date: date("due_date"),
+  paid_at: timestamp("paid_at", { withTimezone: true }),
+  charge_id: text("charge_id"), // ChittyCharge external ID
+  external_id: text("external_id"), // payment processor ID
+  ...timestamps,
+});
+
+// ---------------------------------------------------------------------------
+// cr_comms — communication log (calls, messages, emails)
+// ---------------------------------------------------------------------------
+
+export const crComms = pgTable("cr_comms", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenant_id: uuid("tenant_id").references(() => crTenants.id),
+  property_id: uuid("property_id").references(() => crProperties.id),
+  channel: text("channel").notNull(), // phone | sms | email | openphone
+  direction: text("direction").notNull(), // inbound | outbound
+  content: text("content"),
+  external_id: text("external_id"), // OpenPhone call/message ID
+  phone_number: text("phone_number"),
+  duration: integer("duration"), // seconds, for calls
+  status: text("status"), // completed | missed | voicemail | sent | delivered
+  metadata: jsonb("metadata"),
+  occurred_at: timestamp("occurred_at", { withTimezone: true }).notNull(),
   ...timestamps,
 });

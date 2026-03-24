@@ -29,6 +29,37 @@ CREATE TABLE IF NOT EXISTS "cr_assets" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "cr_comms" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"tenant_id" uuid,
+	"property_id" uuid,
+	"channel" text NOT NULL,
+	"direction" text NOT NULL,
+	"content" text,
+	"external_id" text,
+	"phone_number" text,
+	"duration" integer,
+	"status" text,
+	"metadata" jsonb,
+	"occurred_at" timestamp with time zone NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "cr_financial_reports" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"title" text NOT NULL,
+	"report_type" text NOT NULL,
+	"start_date" date NOT NULL,
+	"end_date" date NOT NULL,
+	"property_id" uuid,
+	"summary" text,
+	"ai_insights" text,
+	"metrics" jsonb,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "cr_inspections" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"unit_id" uuid NOT NULL,
@@ -95,6 +126,23 @@ CREATE TABLE IF NOT EXISTS "cr_maintenance" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "cr_payments" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"lease_id" uuid,
+	"tenant_id" uuid,
+	"amount" numeric NOT NULL,
+	"currency" text DEFAULT 'USD' NOT NULL,
+	"processing_fee" numeric,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"description" text,
+	"due_date" date,
+	"paid_at" timestamp with time zone,
+	"charge_id" text,
+	"external_id" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "cr_portfolios" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,
@@ -116,14 +164,23 @@ CREATE TABLE IF NOT EXISTS "cr_properties" (
 	"property_type" text NOT NULL,
 	"status" text DEFAULT 'setup' NOT NULL,
 	"jurisdiction" text,
+	"description" text,
 	"airbnb_id" text,
 	"furnished_finder_id" text,
 	"zillow_id" text,
+	"booking_id" text,
+	"apartments_id" text,
 	"bedrooms" integer,
 	"bathrooms" numeric,
 	"sqft" integer,
 	"amenities" jsonb,
 	"images" jsonb,
+	"rent_amount" numeric,
+	"rent_currency" text DEFAULT 'USD' NOT NULL,
+	"security_deposit_amount" numeric,
+	"security_deposit_status" text,
+	"external_id" text,
+	"external_source" text,
 	"gov_asset_id" text,
 	"cf_property_id" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -183,7 +240,31 @@ CREATE TABLE IF NOT EXISTS "cr_tenants" (
 	"phone" text,
 	"status" text DEFAULT 'prospect' NOT NULL,
 	"source" text,
+	"background_check_status" text,
+	"notes" text,
+	"documents" jsonb,
+	"external_id" text,
+	"external_source" text,
 	"deleted_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "cr_transactions" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"property_id" uuid,
+	"amount" numeric NOT NULL,
+	"currency" text DEFAULT 'USD' NOT NULL,
+	"type" text NOT NULL,
+	"category" text NOT NULL,
+	"description" text NOT NULL,
+	"date" date NOT NULL,
+	"ai_categorized" boolean DEFAULT false NOT NULL,
+	"ai_confidence" numeric,
+	"receipt_url" text,
+	"external_id" text,
+	"external_source" text,
+	"metadata" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -223,6 +304,24 @@ END $$;
 --> statement-breakpoint
 DO $$ BEGIN
  ALTER TABLE "cr_assets" ADD CONSTRAINT "cr_assets_unit_id_cr_units_id_fk" FOREIGN KEY ("unit_id") REFERENCES "public"."cr_units"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "cr_comms" ADD CONSTRAINT "cr_comms_tenant_id_cr_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."cr_tenants"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "cr_comms" ADD CONSTRAINT "cr_comms_property_id_cr_properties_id_fk" FOREIGN KEY ("property_id") REFERENCES "public"."cr_properties"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "cr_financial_reports" ADD CONSTRAINT "cr_financial_reports_property_id_cr_properties_id_fk" FOREIGN KEY ("property_id") REFERENCES "public"."cr_properties"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -288,6 +387,18 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
+ ALTER TABLE "cr_payments" ADD CONSTRAINT "cr_payments_lease_id_cr_leases_id_fk" FOREIGN KEY ("lease_id") REFERENCES "public"."cr_leases"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "cr_payments" ADD CONSTRAINT "cr_payments_tenant_id_cr_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."cr_tenants"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
  ALTER TABLE "cr_properties" ADD CONSTRAINT "cr_properties_portfolio_id_cr_portfolios_id_fk" FOREIGN KEY ("portfolio_id") REFERENCES "public"."cr_portfolios"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
@@ -307,6 +418,12 @@ END $$;
 --> statement-breakpoint
 DO $$ BEGIN
  ALTER TABLE "cr_setup_sessions" ADD CONSTRAINT "cr_setup_sessions_portfolio_id_cr_portfolios_id_fk" FOREIGN KEY ("portfolio_id") REFERENCES "public"."cr_portfolios"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "cr_transactions" ADD CONSTRAINT "cr_transactions_property_id_cr_properties_id_fk" FOREIGN KEY ("property_id") REFERENCES "public"."cr_properties"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
