@@ -17,5 +17,4 @@ SERVICE_NAME = "chittyrental"
 
 [[kv_namespaces]]
 binding = "RENTAL_CACHE"
-id = "TBD_CREATE_VIA_WRANGLER"
-# Create with: wrangler kv namespace create RENTAL_CACHE
+id = "993d9031acdf4d92b4fe4dfa3e724dec"
