@@ -1,0 +1,81 @@
+{
+  "$schema": "https://schema.chitty.cc/meta/manifest",
+  "databases": [
+    {
+      "name": "chittyrental",
+      "description": "ChittyRental v2 - furnished rental property management and market intelligence",
+      "envVar": "NEON_CHITTYRENTAL_DB_URL",
+      "owner": "furnished-condos",
+      "services": ["chittyrental"],
+      "tables": {
+        "cr_market_area_signals": "chittyrental",
+        "cr_pricing_alerts": "chittyrental",
+        "cr_expansion_opportunities": "chittyrental",
+        "cr_exit_timing_signals": "chittyrental",
+        "cr_market_intelligence_reports": "chittyrental"
+      }
+    }
+  ],
+  "tableOwners": [
+    {
+      "table": "public.cr_market_area_signals",
+      "database": "chittyrental",
+      "service": "chittyrental",
+      "repo": "furnished-condos/chittyrental",
+      "authoringFile": "migrations/0001_market_intelligence.sql",
+      "semver": "1.0.0",
+      "legalHold": false,
+      "canonType": "L",
+      "stewards": "@furnished-condos/platform",
+      "notes": "Aggregated market signals per micro-area. No raw listings."
+    },
+    {
+      "table": "public.cr_pricing_alerts",
+      "database": "chittyrental",
+      "service": "chittyrental",
+      "repo": "furnished-condos/chittyrental",
+      "authoringFile": "migrations/0001_market_intelligence.sql",
+      "semver": "1.0.0",
+      "legalHold": false,
+      "canonType": "E",
+      "stewards": "@furnished-condos/platform",
+      "notes": "Over/underpricing flags vs market bands. Human gate required."
+    },
+    {
+      "table": "public.cr_expansion_opportunities",
+      "database": "chittyrental",
+      "service": "chittyrental",
+      "repo": "furnished-condos/chittyrental",
+      "authoringFile": "migrations/0001_market_intelligence.sql",
+      "semver": "1.0.0",
+      "legalHold": false,
+      "canonType": "E",
+      "stewards": "@furnished-condos/platform",
+      "notes": "Areas where furnished premium > ops cost."
+    },
+    {
+      "table": "public.cr_exit_timing_signals",
+      "database": "chittyrental",
+      "service": "chittyrental",
+      "repo": "furnished-condos/chittyrental",
+      "authoringFile": "migrations/0001_market_intelligence.sql",
+      "semver": "1.0.0",
+      "legalHold": false,
+      "canonType": "E",
+      "stewards": "@furnished-condos/platform",
+      "notes": "Rising supply + falling inquiry velocity warnings."
+    },
+    {
+      "table": "public.cr_market_intelligence_reports",
+      "database": "chittyrental",
+      "service": "chittyrental",
+      "repo": "furnished-condos/chittyrental",
+      "authoringFile": "migrations/0001_market_intelligence.sql",
+      "semver": "1.0.0",
+      "legalHold": false,
+      "canonType": "T",
+      "stewards": "@furnished-condos/platform",
+      "notes": "AI-generated analysis. requiresReview=true enforced."
+    }
+  ]
+}
