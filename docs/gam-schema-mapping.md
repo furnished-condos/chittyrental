@@ -160,7 +160,7 @@ email,name,description
 {portfolio-slug}-owners@chitty.cc,"{portfolio.name} — Owners",Owners group
 {portfolio-slug}-managers@chitty.cc,"{portfolio.name} — Managers",Managers
 {portfolio-slug}-vendors@chitty.cc,"{portfolio.name} — Vendors",Vendors
-{property-slug}-tenants@chitty.cc,"{property.name} — Tenants",Active tenants
+{portfolio-slug}-{property-slug}-tenants@chitty.cc,"{property.name} — Tenants",Active tenants
 ```
 
 ### `resources.csv`

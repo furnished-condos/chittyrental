@@ -205,13 +205,17 @@ export function parseIcal(body: string): IcalEvent[] {
 
 function toIso(v: string): string {
   // Handles basic forms: YYYYMMDD, YYYYMMDDTHHMMSSZ, YYYYMMDDTHHMMSS.
-  // Date-only values are treated as UTC midnight.
+  // Date-only and suffixless datetimes are treated as UTC — a floating
+  // timestamp would be silently reinterpreted by Google Calendar. If the
+  // feed really carries local time it must declare TZID (parseIcal rejects
+  // that explicitly) rather than rely on implicit floating semantics.
   if (/^\d{8}$/.test(v)) {
     return `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}T00:00:00Z`;
   }
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/.exec(v);
   if (m) {
-    return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${m[7] || ""}`;
+    const suffix = m[7] || "Z";
+    return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${suffix}`;
   }
   return v;
 }
@@ -247,7 +251,9 @@ export async function signIcalUrl(
   secret: string
 ): Promise<string> {
   const sig = await hmacSha256Hex(secret, unitId);
-  return `${base.replace(/\/$/, "")}/api/gam/ical/export/${unitId}.ics?sig=${sig}`;
+  // Path must match the unauthenticated public iCal sub-app mounted at
+  // `/ical` in src/index.ts.
+  return `${base.replace(/\/$/, "")}/ical/export/${unitId}.ics?sig=${sig}`;
 }
 
 export async function verifyIcalSig(

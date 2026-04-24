@@ -242,7 +242,7 @@ Each external channel exposes an iCal URL per listing (Airbnb, Furnished
 Finder, VRBO, Booking.com). The Worker pulls them on a schedule:
 
 ```
-GET  /api/gam/ical/pull
+POST /api/calendar/ical/pull
      ?unit_id={uuid}     — refresh a single unit
      (no param)           — refresh all active listings
 ```
@@ -266,7 +266,7 @@ Two-way sync is via iCal export. The Worker publishes a signed iCal URL
 per unit that each channel subscribes to:
 
 ```
-GET  /api/gam/ical/export/{unit_id}.ics?sig={hmac}
+GET  /ical/export/{unit_id}.ics?sig={hmac}
 ```
 
 The URL:
@@ -350,7 +350,7 @@ Full details in [`gam-integrations.md`](./gam-integrations.md).
   - Rent late threshold crossed.
   - Daily digest 08:00 per portfolio.
 - Space membership managed by GAM groups — joining
-  `{property}-managers@chitty.cc` adds you to the property Space.
+  `{portfolio}-{property}-managers@chitty.cc` adds you to the property Space.
 
 ### 3b.5 Gmail
 

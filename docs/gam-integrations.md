@@ -65,8 +65,8 @@ Created during Phase 1 provisioning. Standard folder layout:
 
 - `{portfolio}-owners@chitty.cc` — Content Manager on all property drives
   in the portfolio.
-- `{property}-managers@chitty.cc` — Content Manager on this drive.
-- `{property}-tenants@chitty.cc` — Viewer on `Tenant-Facing/` only (via
+- `{portfolio}-{property}-managers@chitty.cc` — Content Manager on this drive.
+- `{portfolio}-{property}-tenants@chitty.cc` — Viewer on `Tenant-Facing/` only (via
   permission on that folder; Shared Drive default ACL stays restricted).
 - `chittyrental@chitty.cc` (service bot) — Content Manager for write-through.
 
@@ -166,8 +166,8 @@ Spaces use Workspace groups so GAM-managed memberships flow automatically:
 
 ```
 Space "#{property.slug}"
-  members-from-group: {property}-managers@chitty.cc
-  members-from-group: {property}-tenants@chitty.cc
+  members-from-group: {portfolio}-{property}-managers@chitty.cc
+  members-from-group: {portfolio}-{property}-tenants@chitty.cc
 ```
 
 Scopes: `https://www.googleapis.com/auth/chat.spaces`,

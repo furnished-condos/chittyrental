@@ -41,9 +41,23 @@ else
 fi
 
 # Upsert each desired row. rcat is the resourceCategory (other|room|conference_room).
-tail -n +2 "$tmpdir/resources.csv" | while IFS=, read -r rid rname remail rtype rcat rdesc bid cap feat; do
-  rid=${rid//\"/}; rname=${rname//\"/}; remail=${remail//\"/}
-  rcat=${rcat//\"/}; rdesc=${rdesc//\"/}; bid=${bid//\"/}; feat=${feat//\"/}
+# Parsed via python csv to preserve quoted fields containing commas/quotes.
+python3 -c '
+import csv, sys
+with open(sys.argv[1]) as f:
+    for row in csv.DictReader(f):
+        print("\t".join([
+            row.get("resourceId", ""),
+            row.get("resourceName", ""),
+            row.get("resourceEmail", ""),
+            row.get("resourceType", ""),
+            row.get("resourceCategory", ""),
+            row.get("resourceDescription", ""),
+            row.get("buildingId", ""),
+            row.get("capacity", ""),
+            row.get("featureInstances", ""),
+        ]))
+' "$tmpdir/resources.csv" | while IFS=$'\t' read -r rid rname remail rtype rcat rdesc bid cap feat; do
   # remail is set on the resource by GAM automatically from the resourceId
   # and Workspace settings; not a parameter to create/update.
   : "$remail"

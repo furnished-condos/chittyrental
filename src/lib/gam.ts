@@ -122,18 +122,22 @@ export async function buildDesiredState(db: Db): Promise<DesiredState> {
       description: `Property: ${prop.name}`,
     });
 
+    // Groups and buildings live in single flat namespaces per Workspace
+    // customer. Two properties with the same slug in different portfolios
+    // would clobber each other unless the property-level identifier is
+    // prefixed with the portfolio slug. `propFq` (fully-qualified) is that
+    // composite key and is used for both group emails and buildingId.
+    const propFq = `${portfolioSlug}-${propSlug}`;
+
     for (const role of ["tenants", "managers"] as const) {
       groups.push({
-        email: `${propSlug}-${role}@chitty.cc`,
+        email: `${propFq}-${role}@chitty.cc`,
         name: `${prop.name} — ${role[0].toUpperCase() + role.slice(1)}`,
         description: `${role} at ${prop.name}`,
       });
     }
 
-    // Buildings live in one flat namespace per Workspace customer, so
-    // namespace by portfolio to avoid collisions when two portfolios each
-    // have a property with the same name.
-    const nsBuilding = `${portfolioSlug}-${propSlug}`;
+    const nsBuilding = propFq;
 
     buildings.push({
       buildingId: nsBuilding,
@@ -148,7 +152,7 @@ export async function buildDesiredState(db: Db): Promise<DesiredState> {
     drives.push({
       property_id: prop.id,
       drive_name: `${portfolio?.name ?? "Unassigned"} — ${prop.name}`,
-      managers_group: `${propSlug}-managers@chitty.cc`,
+      managers_group: `${propFq}-managers@chitty.cc`,
     });
 
     const propUnits = (units as Unit[]).filter((u) => u.property_id === prop.id);

@@ -39,12 +39,18 @@ apply() {
 # Root OU
 apply gam create org "/ChittyRental" description "ChittyRental managed OUs" || true
 
-# Per-row OU creation (csv: name,parentOrgUnitPath,description)
-tail -n +2 "$tmpdir/ous.csv" | while IFS=, read -r name parent desc; do
-  # strip surrounding quotes GAM CSVs sometimes add
-  name=${name//\"/}
-  parent=${parent//\"/}
-  desc=${desc//\"/}
+# Per-row OU creation (csv: name,parentOrgUnitPath,description). Parsed via
+# python's csv module so quoted fields with commas/quotes round-trip.
+python3 -c '
+import csv, sys
+with open(sys.argv[1]) as f:
+    for row in csv.DictReader(f):
+        print("\t".join([
+            row.get("name", ""),
+            row.get("parentOrgUnitPath", ""),
+            row.get("description", ""),
+        ]))
+' "$tmpdir/ous.csv" | while IFS=$'\t' read -r name parent desc; do
   apply gam create org "${parent}/${name}" description "$desc" || true
 done
 

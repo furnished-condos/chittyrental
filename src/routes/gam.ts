@@ -4,6 +4,7 @@ import type { AppEnv } from "../index";
 import { getDb } from "../db";
 import {
   crLeases,
+  crPortfolios,
   crProperties,
   crSyncLog,
   crTenants,
@@ -104,20 +105,47 @@ async function groupMemberEmails(
   db: ReturnType<typeof getDb>,
   group: string
 ): Promise<string[]> {
-  // Parse `{scope}-{role}@chitty.cc` — scope is either a portfolio slug or a
-  // property slug, role is one of tenants/managers/owners/vendors.
+  // Group emails are `{scope}-{role}@chitty.cc`. Scope is either:
+  //   - a portfolio slug (owners/managers/vendors), or
+  //   - `{portfolioSlug}-{propertySlug}` (tenants/managers of a property).
   const m = /^([a-z0-9-]+)-(tenants|managers|owners|vendors)@/.exec(group);
   if (!m) return [];
   const [, scope, role] = m;
 
-  if (role === "tenants") {
-    // Property-scoped tenant group: emails of tenants with an active lease on
-    // a unit of any property whose slug matches `scope`.
-    const props = await db.select().from(crProperties);
+  if (role === "tenants" || (role === "managers" && scope.includes("-"))) {
+    // Property-scoped group. Match scope against every `{portfolio}-{property}`
+    // pair rather than trying to split on `-` (both slugs can contain dashes).
+    const portfolios = await db
+      .select({ id: crPortfolios.id, name: crPortfolios.name })
+      .from(crPortfolios);
+    const props = await db
+      .select({
+        id: crProperties.id,
+        name: crProperties.name,
+        portfolio_id: crProperties.portfolio_id,
+      })
+      .from(crProperties);
+    const portfolioSlug = new Map<string, string>(
+      portfolios.map((p: { id: string; name: string }) => [p.id, slug(p.name)])
+    );
     const propIds = props
-      .filter((p: typeof crProperties.$inferSelect) => slug(p.name) === scope)
-      .map((p: typeof crProperties.$inferSelect) => p.id);
+      .filter(
+        (p: { id: string; name: string; portfolio_id: string | null }) => {
+          const pslug = p.portfolio_id
+            ? portfolioSlug.get(p.portfolio_id)
+            : undefined;
+          const fq = pslug ? `${pslug}-${slug(p.name)}` : slug(p.name);
+          return fq === scope;
+        }
+      )
+      .map(
+        (p: { id: string; name: string; portfolio_id: string | null }) => p.id
+      );
     if (propIds.length === 0) return [];
+    if (role !== "tenants") {
+      // TODO: resolve property managers (needs ChittyGov / staff directory).
+      return [];
+    }
     const units = await db
       .select({ id: crUnits.id })
       .from(crUnits)
@@ -142,9 +170,10 @@ async function groupMemberEmails(
     return [...seen].sort();
   }
 
-  // TODO: wire managers/owners/vendors once ChittyGov exposes entity members
-  // (gov_entity_id → email list). Returning empty means the runner leaves
-  // existing memberships untouched rather than emptying the group.
+  // TODO: wire portfolio-level owners/managers/vendors once ChittyGov
+  // exposes entity members (gov_entity_id → email list). Returning empty
+  // means the runner leaves existing memberships untouched rather than
+  // emptying the group.
   return [];
 }
 
