@@ -7,6 +7,7 @@ interface Env {
   CHITTYGOV_URL?: string;
   CHITTYFINANCE_URL?: string;
   CHITTYCHARGE_URL?: string;
+  CHITTYSCHEMA_URL?: string;
   CHITTY_AUTH_SERVICE_TOKEN?: string;
 }
 
@@ -60,4 +61,10 @@ export function financeClient(env: Env): ServiceClient | null {
 export function chargeClient(env: Env): ServiceClient | null {
   if (!env.CHITTYCHARGE_URL) return null;
   return makeClient(env.CHITTYCHARGE_URL, env.CHITTY_AUTH_SERVICE_TOKEN ?? "");
+}
+
+/** ChittySchema API client — canonical schema / mapping registry */
+export function schemaClient(env: Env): ServiceClient | null {
+  if (!env.CHITTYSCHEMA_URL) return null;
+  return makeClient(env.CHITTYSCHEMA_URL, env.CHITTY_AUTH_SERVICE_TOKEN ?? "");
 }
