@@ -302,11 +302,16 @@ app.post("/retired", async (c) => {
 
 app.post("/sync-notion", async (c) => {
   const db = getDb(c.env.DATABASE_URL);
+  const requestedDryRun = c.req.query("dry_run") !== "false";
 
   try {
     const rows = await fetchNotionProperties(c.env);
-    // Discovery mode only: operator must fill src/lib/notion-mapping.ts with
-    // real Notion property IDs before enabling writes.
+    const configured = notionStatus(c.env).mappings_configured;
+    // Mappings must be verified before we'll actually upsert into cr_*.
+    // Operator opts in either by setting NOTION_MAPPINGS_CONFIGURED=true
+    // or by editing each map in src/lib/notion-mapping.ts away from defaults.
+    const dryRun = !configured || requestedDryRun;
+    // TODO(next PR): when `!dryRun`, upsert rows into cr_properties here.
     await db.insert(crSyncLog).values({
       source: "notion",
       sync_type: "properties",
@@ -317,7 +322,8 @@ app.post("/sync-notion", async (c) => {
     });
     return c.json({
       data: {
-        dry_run: true, // forced until notion-mapping.ts is verified
+        dry_run: dryRun,
+        mappings_configured: configured,
         rows_discovered: rows.length,
         sample: rows.slice(0, 3),
       },
@@ -365,11 +371,14 @@ app.post("/inventory/sync", async (c) => {
       records_synced: master.length + consumables.length,
       completed_at: new Date(),
     });
+    const requestedDryRun = c.req.query("dry_run") !== "false";
+    // TODO(next PR): when `!requestedDryRun`, upsert into cr_assets here once
+    // operator has confirmed the inventory sheet column layout.
     return c.json({
       data: {
         master_rows: master.length,
         consumable_rows: consumables.length,
-        dry_run: true, // always dry-run until mapping is verified
+        dry_run: requestedDryRun,
         sample_master: master.slice(0, 3),
         sample_consumables: consumables.slice(0, 3),
       },
