@@ -81,15 +81,51 @@ export function normalizeStatus(raw: unknown): string {
   return STATUS_MAP[raw.trim().toLowerCase()] ?? "active";
 }
 
-/** Project a row (array of cell values) through a mapping. */
+/**
+ * Fields that live inside cr_assets.metadata JSONB rather than as top-level
+ * columns. Kept here (next to the column map) so the sheet schema and the DB
+ * shape stay synchronized.
+ */
+const METADATA_FIELDS = new Set([
+  // cr_assets.metadata
+  "location_notes",
+  "receipt_url",
+  "replacement_cost",
+  "life_years",
+  "last_service_date",
+  "service_interval_days",
+  // consumables-only metadata
+  "current_qty",
+  "reorder_threshold",
+  "last_restocked",
+  "unit_price",
+]);
+
+/**
+ * Project a row (array of cell values) through a mapping. Top-level fields go
+ * on the row; anything in METADATA_FIELDS is nested under `metadata`. Property
+ * and unit references are kept on `_refs` because cr_assets stores foreign
+ * keys (not names) — the caller resolves those.
+ */
 export function projectRow(
   row: unknown[],
   mapping: InventoryMapping
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  const metadata: Record<string, unknown> = {};
+  const refs: Record<string, unknown> = {};
   for (const [field, idx] of Object.entries(mapping.columns)) {
-    out[field] = row[idx] ?? null;
+    const v = row[idx] ?? null;
+    if (field === "property_ref" || field === "unit_ref") {
+      refs[field] = v;
+    } else if (METADATA_FIELDS.has(field)) {
+      metadata[field] = v;
+    } else {
+      out[field] = v;
+    }
   }
   if ("status" in out) out.status = normalizeStatus(out.status);
+  if (Object.keys(metadata).length) out.metadata = metadata;
+  if (Object.keys(refs).length) out._refs = refs;
   return out;
 }

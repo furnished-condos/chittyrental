@@ -24,29 +24,46 @@ curl -sSf -X POST \
   -d '{"sync_type":"resources","direction":"outbound","status":"running"}' \
   "$RENTAL_API/api/gam/log" >/dev/null
 
-apply() { [[ "$DRY_RUN" == 1 ]] && echo "DRY: $*" || "$@"; }
+apply() {
+  if [[ "$DRY_RUN" == 1 ]]; then
+    echo "DRY: $*"
+  else
+    "$@"
+  fi
+}
 
 # Snapshot current GAM resources, keyed by resourceId
-gam print resources allfields > "$tmpdir/current.csv"
+if [[ "$DRY_RUN" == 1 ]]; then
+  echo "DRY: gam print resources allfields (skipping live read)"
+  : > "$tmpdir/current.csv"
+else
+  gam print resources allfields > "$tmpdir/current.csv"
+fi
 
-# Upsert each desired row
+# Upsert each desired row. rcat is the resourceCategory (other|room|conference_room).
 tail -n +2 "$tmpdir/resources.csv" | while IFS=, read -r rid rname remail rtype rcat rdesc bid cap feat; do
   rid=${rid//\"/}; rname=${rname//\"/}; remail=${remail//\"/}
+  rcat=${rcat//\"/}; rdesc=${rdesc//\"/}; bid=${bid//\"/}; feat=${feat//\"/}
+  # remail is set on the resource by GAM automatically from the resourceId
+  # and Workspace settings; not a parameter to create/update.
+  : "$remail"
   if grep -q "^${rid}," "$tmpdir/current.csv"; then
     apply gam update resource "$rid" \
       name "$rname" \
       description "$rdesc" \
       type "$rtype" \
+      category "${rcat:-other}" \
       capacity "${cap:-2}" \
-      building "${bid//\"/}" \
-      features "${feat//\"/}" || true
+      building "$bid" \
+      features "$feat" || true
   else
     apply gam create resource "$rid" "$rname" \
       description "$rdesc" \
       type "$rtype" \
+      category "${rcat:-other}" \
       capacity "${cap:-2}" \
-      building "${bid//\"/}" \
-      features "${feat//\"/}" || true
+      building "$bid" \
+      features "$feat" || true
   fi
 done
 

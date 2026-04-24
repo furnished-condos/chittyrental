@@ -12,7 +12,7 @@ compatibility_flags = ["nodejs_compat"]
 #   NOTION_PORTFOLIOS_DATABASE_ID — Portfolios DB on Notion (optional)
 #   GOOGLE_SA_KEY               — base64-encoded service account JSON (GAM-delegated)
 #   GOOGLE_SA_SUBJECT           — admin to impersonate (e.g. gam@chitty.cc)
-#   INVENTORY_SHEET_ID          — 1Zsu533Uy498ekbXdWpMuw8xIPAl5MCjf7mxFYkznyWI
+#   INVENTORY_SHEET_ID          — Google Sheet ID of the inventory roster
 #   ICAL_SECRET                 — HMAC key for signing unit iCal URLs
 #   GEMINI_API_KEY              — server-side Gemini calls
 
@@ -22,6 +22,7 @@ CHITTYFINANCE_URL = "https://finance.chitty.cc"
 CHITTYGOV_URL = "https://gov.chitty.cc"
 CHITTYCHARGE_URL = "https://charge.chitty.cc"
 CHITTYCONNECT_URL = "https://connect.chitty.cc"
+CHITTYSCHEMA_URL = "https://schema.chitty.cc"
 NOTION_GATEWAY_URL = "https://mcp.ch1tty.com"
 GEMINI_MODEL = "gemini-2.5-flash"
 SERVICE_NAME = "chittyrental"

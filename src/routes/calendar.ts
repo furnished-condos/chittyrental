@@ -1,8 +1,10 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { AppEnv } from "../index";
 import { getDb } from "../db";
 import { crProperties, crUnits } from "../db/schema";
+import { RESOURCE_DOMAIN, short } from "../lib/gam";
+import { resolvePropertyChannels } from "../lib/channels";
 import {
   forwardToHomeAssistant,
   pullIcal,
@@ -44,61 +46,66 @@ app.post("/ical/pull", async (c) => {
     .json<{ unit_id?: string }>()
     .catch(() => ({} as { unit_id?: string }));
 
-  const query = body.unit_id
+  const units = await (body.unit_id
     ? db.select().from(crUnits).where(eq(crUnits.id, body.unit_id))
-    : db.select().from(crUnits);
-  const units = await query;
+    : db.select().from(crUnits));
 
-  const CHANNEL_KEYS = [
-    ["airbnb_id", "airbnb"],
-    ["furnished_finder_id", "furnished_finder"],
-    ["booking_id", "booking"],
-  ] as const;
+  // Preload all referenced properties in one query to avoid N+1.
+  const propertyIds = [
+    ...new Set(
+      (units as Array<typeof crUnits.$inferSelect>).map((u) => u.property_id)
+    ),
+  ];
+  const props = propertyIds.length
+    ? await db
+        .select()
+        .from(crProperties)
+        .where(inArray(crProperties.id, propertyIds))
+    : [];
+  const propById = new Map(
+    (props as Array<typeof crProperties.$inferSelect>).map((p) => [p.id, p])
+  );
 
-  const results: Array<{ unit_id: string; channel: string; events: number; error?: string }> = [];
-  for (const unit of units) {
-    const [prop] = await db
-      .select()
-      .from(crProperties)
-      .where(eq(crProperties.id, unit.property_id))
-      .limit(1);
+  const results: Array<{
+    unit_id: string;
+    channel: string;
+    events: number;
+    error?: string;
+  }> = [];
+
+  for (const unit of units as Array<typeof crUnits.$inferSelect>) {
+    const prop = propById.get(unit.property_id);
     if (!prop) continue;
-
-    for (const [key, channel] of CHANNEL_KEYS) {
-      const externalId = prop[key];
-      if (!externalId) continue;
-      const feedUrl = icalFeedUrl(channel, externalId);
-      if (!feedUrl) continue;
-      try {
-        const events = await pullIcal(feedUrl);
-        results.push({ unit_id: unit.id, channel, events: events.length });
-        // TODO: upsert each event onto the unit calendar via upsertEvent()
-      } catch (err) {
-        results.push({ unit_id: unit.id, channel, events: 0, error: String(err) });
-      }
-    }
+    const feeds = resolvePropertyChannels({
+      id: prop.id,
+      airbnb_id: prop.airbnb_id,
+      furnished_finder_id: prop.furnished_finder_id,
+      booking_id: prop.booking_id,
+      zillow_id: prop.zillow_id,
+      apartments_id: prop.apartments_id,
+      metadata: prop.metadata as Record<string, unknown> | null,
+    }).filter((f) => f.icalUrl);
+    // Fetch all resolvable feeds for the unit concurrently.
+    const perFeed = await Promise.all(
+      feeds.map(async (f) => {
+        try {
+          const events = await pullIcal(f.icalUrl!);
+          return { unit_id: unit.id, channel: f.channel, events: events.length };
+        } catch (err) {
+          return {
+            unit_id: unit.id,
+            channel: f.channel,
+            events: 0,
+            error: String(err),
+          };
+        }
+      })
+    );
+    results.push(...perFeed);
   }
 
   return c.json({ data: results });
 });
-
-function icalFeedUrl(channel: string, id: string): string | null {
-  // Channel iCal URL shapes — these are the public paths each platform
-  // exposes for a given listing id. If a channel requires auth or a token,
-  // wrap the id value in a secret stored in cr_properties.metadata.
-  switch (channel) {
-    case "airbnb":
-      return `https://www.airbnb.com/calendar/ical/${id}.ics`;
-    case "vrbo":
-      return `https://www.vrbo.com/icalendar/${id}.ics`;
-    case "booking":
-      return null; // Booking.com sync is OTA-style, not iCal
-    case "furnished_finder":
-      return null; // Furnished Finder has per-account iCal; store URL in metadata
-    default:
-      return null;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Fan-out webhook
@@ -128,10 +135,16 @@ app.post("/fanout", async (c) => {
   const resourceEmail =
     typeof meta.resource_email === "string"
       ? (meta.resource_email as string)
-      : `unit-${unit.id.replace(/-/g, "").slice(0, 8)}@resources.chitty.cc`;
+      : `unit-${short(unit.id)}@${RESOURCE_DOMAIN}`;
 
-  const start = payload.scheduled_for ?? new Date().toISOString();
-  const end = new Date(new Date(start).getTime() + 60 * 60 * 1000).toISOString();
+  const startDate = payload.scheduled_for
+    ? new Date(payload.scheduled_for)
+    : new Date();
+  if (Number.isNaN(startDate.getTime())) {
+    return c.json({ error: "scheduled_for must be a valid ISO timestamp" }, 400);
+  }
+  const start = startDate.toISOString();
+  const end = new Date(startDate.getTime() + 60 * 60 * 1000).toISOString();
 
   let eventId: string | undefined;
   try {
@@ -146,7 +159,11 @@ app.post("/fanout", async (c) => {
         unitId: unit.id,
         propertyId: prop.id,
         type: payload.type,
-        sourceId: `fanout-${Date.now()}`,
+        // Deterministic sourceId so retries or duplicate webhook deliveries
+        // patch the same event instead of piling up duplicates.
+        sourceId: payload.scheduled_for
+          ? `fanout:${payload.type}:${payload.scheduled_for}`
+          : `fanout:${payload.type}`,
         status: "scheduled",
         source: "chittyrental",
         title: payload.title,

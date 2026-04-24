@@ -60,8 +60,8 @@ export interface DesiredState {
   drives: DesiredDrive[];
 }
 
-const ROOT_OU = "/ChittyRental";
-const RESOURCE_DOMAIN = "resources.chitty.cc";
+export const ROOT_OU = "/ChittyRental";
+export const RESOURCE_DOMAIN = "resources.chitty.cc";
 
 export function slug(s: string | null | undefined): string {
   return (s ?? "")
@@ -72,8 +72,11 @@ export function slug(s: string | null | undefined): string {
     .slice(0, 63);
 }
 
-function short(uuid: string): string {
-  return uuid.replace(/-/g, "").slice(0, 8);
+// 12 hex chars = ~48 bits of entropy so the birthday bound for a
+// resourceId/email collision is ~16M units. Changing this length invalidates
+// every existing resourceEmail, so keep in sync with any stored metadata.
+export function short(uuid: string): string {
+  return uuid.replace(/-/g, "").slice(0, 12);
 }
 
 export async function buildDesiredState(db: Db): Promise<DesiredState> {
@@ -127,8 +130,13 @@ export async function buildDesiredState(db: Db): Promise<DesiredState> {
       });
     }
 
+    // Buildings live in one flat namespace per Workspace customer, so
+    // namespace by portfolio to avoid collisions when two portfolios each
+    // have a property with the same name.
+    const nsBuilding = `${portfolioSlug}-${propSlug}`;
+
     buildings.push({
-      buildingId: propSlug,
+      buildingId: nsBuilding,
       buildingName: prop.name,
       description: [prop.address, prop.city, prop.state, prop.zip]
         .filter(Boolean)
@@ -157,7 +165,7 @@ export async function buildDesiredState(db: Db): Promise<DesiredState> {
         resourceType: "Rental Unit",
         resourceCategory: "OTHER",
         resourceDescription: `chitty:${unit.id}`,
-        buildingId: propSlug,
+        buildingId: nsBuilding,
         capacity,
         featureInstances,
         crUnitId: unit.id,
@@ -269,12 +277,16 @@ export function reconcileResources(
       continue;
     }
     for (const field of ["resourceName", "resourceEmail", "buildingId"] as const) {
-      if (actual[field] && actual[field] !== String(d[field])) {
+      // Treat undefined and empty string as "present but different", so an
+      // operator clearing a field in GAM still shows up as drift.
+      const actualVal = actual[field] ?? "";
+      const desiredVal = String(d[field]);
+      if (actualVal !== desiredVal) {
         report.drifted.push({
           resourceId: d.resourceId,
           field,
-          desired: String(d[field]),
-          actual: actual[field],
+          desired: desiredVal,
+          actual: actualVal,
         });
       }
     }

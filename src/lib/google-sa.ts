@@ -107,16 +107,25 @@ export async function getAccessToken(
 
   const sa = parseServiceAccountKey(env.GOOGLE_SA_KEY);
   const jwt = await signJwt(sa, scopes, impersonate);
-  const res = await fetch(sa.token_uri, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  let res: Response;
+  try {
+    res = await fetch(sa.token_uri, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion: jwt,
+      }),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
-    throw new Error(`google token exchange failed: ${res.status} ${await res.text()}`);
+    const body = await res.text().catch(() => "");
+    throw new Error(`google token exchange failed: ${res.status} ${body.slice(0, 200)}`);
   }
   const body = (await res.json()) as { access_token: string; expires_in: number };
   tokenMemo.set(cacheKey, {

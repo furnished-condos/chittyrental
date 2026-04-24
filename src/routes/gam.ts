@@ -1,8 +1,14 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import type { AppEnv } from "../index";
 import { getDb } from "../db";
-import { crProperties, crSyncLog } from "../db/schema";
+import {
+  crLeases,
+  crProperties,
+  crSyncLog,
+  crTenants,
+  crUnits,
+} from "../db/schema";
 import {
   buildDesiredState,
   buildingsToCsv,
@@ -11,6 +17,7 @@ import {
   reconcileResources,
   resourcesToCsv,
   retirePlan,
+  slug,
 } from "../lib/gam";
 import { configStatus as notionStatus, fetchProperties as fetchNotionProperties } from "../lib/notion";
 import { pullMaster, pullConsumables } from "../lib/inventory";
@@ -80,12 +87,66 @@ app.get("/desired-state/drives.json", async (c) => {
   return c.json(state.drives);
 });
 
-// Placeholder — group members desired state requires joining cr_tenants / ChittyGov
-app.get("/desired-state/group-members.csv", async () => {
-  // TODO: compute members from cr_leases (tenants), cr_portfolios.gov_entity_id (owners), etc.
-  const header = "email,role\n";
-  return new Response(header, { headers: { "Content-Type": "text/csv" } });
+// `gam update group ... sync members file <path>` expects a headerless,
+// single-column list of email addresses — one per line. We return emails that
+// we can derive today; groups whose membership requires ChittyGov (owners,
+// vendors) return an empty body so the runner skips the sync (see
+// scripts/gam/bootstrap-groups.sh).
+app.get("/desired-state/group-members.csv", async (c) => {
+  const group = c.req.query("group") ?? "";
+  const db = getDb(c.env.DATABASE_URL);
+  const emails = await groupMemberEmails(db, group);
+  const body = emails.length ? emails.join("\n") + "\n" : "";
+  return new Response(body, { headers: { "Content-Type": "text/plain" } });
 });
+
+async function groupMemberEmails(
+  db: ReturnType<typeof getDb>,
+  group: string
+): Promise<string[]> {
+  // Parse `{scope}-{role}@chitty.cc` — scope is either a portfolio slug or a
+  // property slug, role is one of tenants/managers/owners/vendors.
+  const m = /^([a-z0-9-]+)-(tenants|managers|owners|vendors)@/.exec(group);
+  if (!m) return [];
+  const [, scope, role] = m;
+
+  if (role === "tenants") {
+    // Property-scoped tenant group: emails of tenants with an active lease on
+    // a unit of any property whose slug matches `scope`.
+    const props = await db.select().from(crProperties);
+    const propIds = props
+      .filter((p: typeof crProperties.$inferSelect) => slug(p.name) === scope)
+      .map((p: typeof crProperties.$inferSelect) => p.id);
+    if (propIds.length === 0) return [];
+    const units = await db
+      .select({ id: crUnits.id })
+      .from(crUnits)
+      .where(inArray(crUnits.property_id, propIds));
+    const unitIds = units.map((u: { id: string }) => u.id);
+    if (unitIds.length === 0) return [];
+    const rows = await db
+      .select({ email: crTenants.email })
+      .from(crLeases)
+      .innerJoin(crTenants, eq(crLeases.tenant_id, crTenants.id))
+      .where(
+        and(
+          inArray(crLeases.unit_id, unitIds),
+          eq(crLeases.status, "active"),
+          isNotNull(crTenants.email)
+        )
+      );
+    const seen = new Set<string>();
+    for (const r of rows as Array<{ email: string | null }>) {
+      if (r.email) seen.add(r.email.trim().toLowerCase());
+    }
+    return [...seen].sort();
+  }
+
+  // TODO: wire managers/owners/vendors once ChittyGov exposes entity members
+  // (gov_entity_id → email list). Returning empty means the runner leaves
+  // existing memberships untouched rather than emptying the group.
+  return [];
+}
 
 // ---------------------------------------------------------------------------
 // Reconcile
@@ -110,8 +171,10 @@ app.post("/reconcile", async (c) => {
       records_synced:
         report.missing_in_gam.length + report.orphan_in_gam.length + report.drifted.length,
       error_message:
-        report.missing_in_gam.length || report.drifted.length
-          ? `missing:${report.missing_in_gam.length} drifted:${report.drifted.length}`
+        report.missing_in_gam.length ||
+        report.drifted.length ||
+        report.orphan_in_gam.length
+          ? `missing:${report.missing_in_gam.length} orphan:${report.orphan_in_gam.length} drifted:${report.drifted.length}`
           : null,
       completed_at: new Date(),
     })
@@ -186,11 +249,18 @@ app.post("/retired", async (c) => {
   const db = getDb(c.env.DATABASE_URL);
   const { property_id, retired_at } = await c.req.json<{
     property_id: string;
-    retired_at: string;
+    retired_at?: string;
   }>();
+  if (!property_id || !/^[0-9a-f-]{36}$/i.test(property_id)) {
+    return c.json({ error: "property_id must be a UUID" }, 400);
+  }
+  const retiredAt = retired_at ? new Date(retired_at) : new Date();
+  if (Number.isNaN(retiredAt.getTime())) {
+    return c.json({ error: "retired_at must be a valid ISO timestamp" }, 400);
+  }
   const [updated] = await db
     .update(crProperties)
-    .set({ status: "inactive", updated_at: new Date(retired_at) })
+    .set({ status: "inactive", updated_at: retiredAt })
     .where(eq(crProperties.id, property_id))
     .returning();
   if (!updated) return c.json({ error: "property not found" }, 404);
@@ -203,12 +273,11 @@ app.post("/retired", async (c) => {
 
 app.post("/sync-notion", async (c) => {
   const db = getDb(c.env.DATABASE_URL);
-  const dryRun = c.req.query("dry_run") === "true";
 
   try {
     const rows = await fetchNotionProperties(c.env);
-    // For now: discovery mode — just report what we saw. Operator must fill
-    // src/lib/notion-mapping.ts with real property IDs before enabling writes.
+    // Discovery mode only: operator must fill src/lib/notion-mapping.ts with
+    // real Notion property IDs before enabling writes.
     await db.insert(crSyncLog).values({
       source: "notion",
       sync_type: "properties",
@@ -219,7 +288,7 @@ app.post("/sync-notion", async (c) => {
     });
     return c.json({
       data: {
-        dry_run: dryRun || true, // always dry-run until mapping is configured
+        dry_run: true, // forced until notion-mapping.ts is verified
         rows_discovered: rows.length,
         sample: rows.slice(0, 3),
       },

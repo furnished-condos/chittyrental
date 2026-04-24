@@ -30,6 +30,7 @@ export type AppEnv = {
     CHITTYGOV_URL: string;
     CHITTYCHARGE_URL: string;
     CHITTYCONNECT_URL: string;
+    CHITTYSCHEMA_URL?: string;
     SERVICE_NAME: string;
     RENTAL_CACHE: KVNamespace;
     // Notion gateway (mcp.ch1tty.com or direct Notion API)

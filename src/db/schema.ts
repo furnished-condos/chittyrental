@@ -221,6 +221,7 @@ export const crAssets = pgTable("cr_assets", {
   serial_number: text("serial_number"),
   status: text("status").notNull().default("active"), // planned | ordered | received | active | repair | missing | end_of_life | retired | sold | written_off
   warranty_expiration: date("warranty_expiration"),
+  external_id: text("external_id"), // natural key from inventory sheet (sha256(property+unit+name+serial)[:8] when blank)
   metadata: jsonb("metadata"), // reorder_threshold, life_years, service_interval_days, receipt_url, etc.
   ...timestamps,
 });

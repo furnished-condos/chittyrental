@@ -574,6 +574,50 @@ relying on email format.
 - **Multi-portfolio property.** Notion schema currently assumes 1:1 property
   → portfolio. Do we need a many-to-many for co-owned assets?
 
+## 9a. Direction of travel (not yet built)
+
+Captured here so we produce it once, in order, rather than rebuilding it as
+requirements surface. None of this is in code yet — the current PR only
+scaffolds the anchors (`src/lib/channels.ts`, `src/lib/chittyschema.ts`,
+mapping configs).
+
+**Canonical data alignment.** `CHITTYSCHEMA_URL` (defaults to
+`schema.chitty.cc`) is the registry of record for every cross-service shape:
+the Notion property map, the inventory sheet column map, the channel
+catalog, the calendar event taxonomy. The local files in `src/lib/*-mapping.ts`
+are fallbacks; when ChittySchema returns a definition by `chittycanon://`
+URI, it wins. This is the primary alignment anchor.
+
+**Unified channel catalog.** `src/lib/channels.ts` defines the set
+currently in play: Airbnb, VRBO, Booking.com, Furnished Finder, TurboTenant,
+furnished-condos.com, Chico, Zillow, Apartments.com. Per-property IDs and
+tokenized iCal URLs live in `cr_properties.metadata.channels`. Adding a new
+channel = one catalog entry, no schema migration.
+
+**Public distribution surface.** The SoT calendar needs consumers:
+- `/api/public/availability/{unit_id}` — signed, busy-only windows for
+  channel managers and third-party embeds.
+- `/api/public/properties` / `/api/public/units` — sanitized catalog for the
+  furnished-condos.com website's dynamic content and for Chico's knowledge
+  base ingest. ChittySchema URIs included in every response so consumers
+  know what they're looking at.
+- `/api/public/mcp/manifest` + tool endpoints — MCP-compliant surface so
+  Chico and any other agent can query availability/inventory/leases through
+  a standardized schema.
+
+**ChittyRental ↔ ChittyFinance: depreciation.** `cr_assets` already carries
+`purchase_date`, `purchase_price`, and (now) `metadata.life_years`. A weekly
+depreciation pass emits straight-line entries into ChittyFinance via the
+existing `financeClient`, tagged with `cf_transaction_id` on the asset's
+`cr_assets` row. Inventory optimization (`cr_financial_reports`) reads those
+figures back to compute repair-vs-replace break-evens. No new schema
+required.
+
+**Chico KB ingestion.** Chico doesn't pull iCal — it consumes the public
+API surface described above plus the ChittySchema registry, so its answers
+about a property or unit are always derived from the same source of truth
+the ops team sees. No separate ingestion pipeline.
+
 ## 10. Related
 
 - [`gam-schema-mapping.md`](./gam-schema-mapping.md) — column-by-column map

@@ -63,12 +63,28 @@ export const NOTION_PORTFOLIO_MAP: NotionPropertyMap = {
 };
 
 /**
- * Returns true once a human has filled in real Notion IDs (replacing the
- * default name-based placeholders). We flip this by convention: real IDs
- * contain `%` or are 4-char shorthand, never a capitalized English word.
+ * Default placeholder values. `mappingsConfigured()` returns true only when
+ * the operator has either (a) changed every map away from these defaults or
+ * (b) set `NOTION_MAPPINGS_CONFIGURED=true` as an explicit opt-in.
  */
-export function mappingsConfigured(): boolean {
-  return Object.values(NOTION_PROPERTY_MAP).every(
-    (v) => v.length <= 8 || v.includes("%")
+const DEFAULT_PROPERTY_MAP: NotionPropertyMap = { ...NOTION_PROPERTY_MAP };
+const DEFAULT_UNIT_MAP: NotionPropertyMap = { ...NOTION_UNIT_MAP };
+const DEFAULT_PORTFOLIO_MAP: NotionPropertyMap = { ...NOTION_PORTFOLIO_MAP };
+
+function differsFromDefault(
+  current: NotionPropertyMap,
+  defaults: NotionPropertyMap
+): boolean {
+  return Object.keys(defaults).every((k) => current[k] !== defaults[k]);
+}
+
+export function mappingsConfigured(
+  env?: { NOTION_MAPPINGS_CONFIGURED?: string }
+): boolean {
+  if (env?.NOTION_MAPPINGS_CONFIGURED === "true") return true;
+  return (
+    differsFromDefault(NOTION_PROPERTY_MAP, DEFAULT_PROPERTY_MAP) &&
+    differsFromDefault(NOTION_UNIT_MAP, DEFAULT_UNIT_MAP) &&
+    differsFromDefault(NOTION_PORTFOLIO_MAP, DEFAULT_PORTFOLIO_MAP)
   );
 }

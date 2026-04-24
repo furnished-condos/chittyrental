@@ -21,6 +21,7 @@ export interface NotionEnv {
   NOTION_DATABASE_ID?: string;
   NOTION_UNITS_DATABASE_ID?: string;
   NOTION_PORTFOLIOS_DATABASE_ID?: string;
+  NOTION_MAPPINGS_CONFIGURED?: string;
 }
 
 export interface NotionPage {
@@ -45,21 +46,30 @@ async function queryDatabase(
   databaseId: string,
   cursor?: string
 ): Promise<NotionQueryResponse> {
-  const res = await fetch(`${defaultGateway(env)}/v1/databases/${databaseId}/query`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Source-Service": "chittyrental",
-      ...(env.NOTION_GATEWAY_TOKEN
-        ? { Authorization: `Bearer ${env.NOTION_GATEWAY_TOKEN}` }
-        : {}),
-      // Also support direct Notion API if gateway points at api.notion.com
-      "Notion-Version": "2022-06-28",
-    },
-    body: JSON.stringify(cursor ? { start_cursor: cursor, page_size: 100 } : { page_size: 100 }),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  let res: Response;
+  try {
+    res = await fetch(`${defaultGateway(env)}/v1/databases/${databaseId}/query`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Source-Service": "chittyrental",
+        ...(env.NOTION_GATEWAY_TOKEN
+          ? { Authorization: `Bearer ${env.NOTION_GATEWAY_TOKEN}` }
+          : {}),
+        // Also support direct Notion API if gateway points at api.notion.com
+        "Notion-Version": "2022-06-28",
+      },
+      body: JSON.stringify(cursor ? { start_cursor: cursor, page_size: 100 } : { page_size: 100 }),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
-    throw new Error(`notion query failed: ${res.status} ${await res.text()}`);
+    const body = await res.text().catch(() => "");
+    throw new Error(`notion query failed: ${res.status} ${body.slice(0, 200)}`);
   }
   return res.json() as Promise<NotionQueryResponse>;
 }
@@ -178,6 +188,6 @@ export function configStatus(env: NotionEnv): {
     gateway: defaultGateway(env),
     has_token: Boolean(env.NOTION_GATEWAY_TOKEN),
     has_database_id: Boolean(env.NOTION_DATABASE_ID),
-    mappings_configured: mappingsConfigured(),
+    mappings_configured: mappingsConfigured(env),
   };
 }

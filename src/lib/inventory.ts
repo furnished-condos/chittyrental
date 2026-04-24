@@ -22,11 +22,20 @@ async function getRange(
 ): Promise<unknown[][]> {
   const token = await getAccessToken(env, [SCOPES.SHEETS_RO]);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${env.INVENTORY_SHEET_ID}/values/${encodeURIComponent(mapping.range)}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
-    throw new Error(`sheets get failed: ${res.status} ${await res.text()}`);
+    const body = await res.text().catch(() => "");
+    throw new Error(`sheets get failed: ${res.status} ${body.slice(0, 200)}`);
   }
   const body = (await res.json()) as { values?: unknown[][] };
   return body.values ?? [];

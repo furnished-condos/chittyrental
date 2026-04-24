@@ -9,7 +9,13 @@ tmpdir=$(mktemp -d); trap 'rm -rf "$tmpdir"' EXIT
 curl -sSf -H "Authorization: Bearer $RENTAL_TOKEN" \
   "$RENTAL_API/api/gam/desired-state/buildings.csv" -o "$tmpdir/buildings.csv"
 
-apply() { [[ "$DRY_RUN" == 1 ]] && echo "DRY: $*" || "$@"; }
+apply() {
+  if [[ "$DRY_RUN" == 1 ]]; then
+    echo "DRY: $*"
+  else
+    "$@"
+  fi
+}
 apply gam csv "$tmpdir/buildings.csv" gam create building "~buildingId" "~buildingName" \
   description "~description" floors "~floorNames" coordinates "~coordinates" || true
 

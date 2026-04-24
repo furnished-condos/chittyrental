@@ -10,10 +10,13 @@ service account. This also keeps the privileged SA key off the edge.
 
 ## One-time setup
 
-1. Install GAMADV-XTD3 on the runner:
+1. Install GAMADV-XTD3 on the runner (use the canonical installer URL — the
+   old `git.io/install-gam` shortlink no longer resolves):
    ```bash
-   bash <(curl -s -S -L https://git.io/install-gam) -l
+   bash <(curl -s -S -L https://raw.githubusercontent.com/taers232c/GAMADV-XTD3/master/src/gam-install.sh) -l
    ```
+   If you're starting fresh and prefer GAM7 instead, use
+   `https://git.io/gam-install` and adjust the scripts accordingly.
 2. Authenticate as the delegated admin:
    ```bash
    gam oauth create
@@ -51,7 +54,7 @@ All scripts accept `--dry-run` to print commands without executing.
 ./sync-from-worker.sh
 
 # hourly via cron
-*/60 * * * * cd /opt/chittyrental/scripts/gam && ./reconcile.sh
+0 * * * * cd /opt/chittyrental/scripts/gam && ./reconcile.sh
 ```
 
 ## Templates

@@ -80,6 +80,13 @@ export async function upsertEvent(
   const searchBody = (await search.json()) as {
     items: Array<{ id: string; htmlLink?: string }>;
   };
+  if (searchBody.items.length > 1) {
+    // Multiple events shouldn't share a (chitty.type, chitty.id) pair; fail
+    // loudly so an operator can reconcile rather than patching only the first.
+    throw new Error(
+      `calendar has ${searchBody.items.length} events with chitty.id=${ev.sourceId}, chitty.type=${ev.type}; manual cleanup required`
+    );
+  }
   const existing = searchBody.items[0];
 
   const body = {
@@ -150,7 +157,22 @@ export interface IcalEvent {
   summary: string;
 }
 
-/** Minimal iCal VEVENT parser — enough for channel busy blocks. */
+/**
+ * Minimal iCal VEVENT parser — enough for channel busy blocks.
+ *
+ * Airbnb emits date-only (`DTSTART;VALUE=DATE:YYYYMMDD`) and VRBO emits UTC
+ * datetimes (`DTSTART:YYYYMMDDTHHMMSSZ`). Feeds that specify a local time via
+ * `TZID=...` are rejected rather than silently misinterpreted — the timestamp
+ * would otherwise be treated as UTC downstream and shift the booking window
+ * by the property's offset.
+ */
+export class IcalTimezoneUnsupportedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IcalTimezoneUnsupportedError";
+  }
+}
+
 export function parseIcal(body: string): IcalEvent[] {
   const unfolded = body.replace(/\r?\n[ \t]/g, ""); // RFC5545 line unfolding
   const events: IcalEvent[] = [];
@@ -158,23 +180,32 @@ export function parseIcal(body: string): IcalEvent[] {
   for (let i = 1; i < blocks.length; i++) {
     const block = blocks[i].split(/END:VEVENT/)[0];
     const uid = /UID:(.+?)\r?\n/.exec(block)?.[1]?.trim() ?? "";
-    const start = /DTSTART(?:;[^:]+)?:(.+?)\r?\n/.exec(block)?.[1]?.trim() ?? "";
-    const end = /DTEND(?:;[^:]+)?:(.+?)\r?\n/.exec(block)?.[1]?.trim() ?? "";
+    const startMatch = /DTSTART(;[^:]+)?:(.+?)\r?\n/.exec(block);
+    const endMatch = /DTEND(;[^:]+)?:(.+?)\r?\n/.exec(block);
     const summary = /SUMMARY:(.+?)\r?\n/.exec(block)?.[1]?.trim() ?? "";
-    if (uid && start && end) {
-      events.push({
-        uid,
-        start: toIso(start),
-        end: toIso(end),
-        summary,
-      });
+    if (!uid || !startMatch || !endMatch) continue;
+
+    const startParams = startMatch[1] ?? "";
+    const endParams = endMatch[1] ?? "";
+    if (/TZID=/i.test(startParams) || /TZID=/i.test(endParams)) {
+      throw new IcalTimezoneUnsupportedError(
+        `iCal feed uses TZID on VEVENT ${uid}; timezone-aware parsing is not yet supported.`
+      );
     }
+
+    events.push({
+      uid,
+      start: toIso(startMatch[2].trim()),
+      end: toIso(endMatch[2].trim()),
+      summary,
+    });
   }
   return events;
 }
 
 function toIso(v: string): string {
-  // Handles basic forms: YYYYMMDD, YYYYMMDDTHHMMSSZ, YYYYMMDDTHHMMSS
+  // Handles basic forms: YYYYMMDD, YYYYMMDDTHHMMSSZ, YYYYMMDDTHHMMSS.
+  // Date-only values are treated as UTC midnight.
   if (/^\d{8}$/.test(v)) {
     return `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}T00:00:00Z`;
   }
@@ -242,6 +273,20 @@ export interface BusyBlock {
   summary: string;
 }
 
+/** RFC 5545 §3.3.11 escaping for TEXT values. */
+function escapeIcsText(v: string): string {
+  return v
+    .replace(/\\/g, "\\\\")
+    .replace(/\r\n|\r|\n/g, "\\n")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,");
+}
+
+/** Restrict a UID to characters safe in the raw (unquoted) iCal form. */
+function sanitizeIcsUid(v: string): string {
+  return v.replace(/[^A-Za-z0-9@._+\-:/]/g, "_");
+}
+
 export function renderIcal(
   unitId: string,
   blocks: BusyBlock[]
@@ -259,11 +304,12 @@ export function renderIcal(
   for (const b of blocks) {
     lines.push(
       "BEGIN:VEVENT",
-      `UID:${b.uid}`,
+      `UID:${sanitizeIcsUid(b.uid)}`,
       `DTSTAMP:${now}`,
       `DTSTART:${toIcsTime(b.start)}`,
       `DTEND:${toIcsTime(b.end)}`,
-      `SUMMARY:${b.summary.replace(/\r?\n/g, " ")}`,
+      `SUMMARY:${escapeIcsText(b.summary)}`,
+      "SEQUENCE:0",
       "END:VEVENT"
     );
   }
