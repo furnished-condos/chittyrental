@@ -8,7 +8,7 @@
  */
 
 import { Hono } from "hono";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import type { AppEnv } from "../index";
 import { getDb } from "../db";
 import {
@@ -23,6 +23,22 @@ import { CHANNEL_CATALOG, resolvePropertyChannels } from "../lib/channels";
 import { CHITTY_CANON } from "../lib/chittyschema";
 
 const app = new Hono<AppEnv>();
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Strict UUID shape check. Rejects all-hex-digit strings of length 36 that
+ *  aren't actually valid UUIDs (which would otherwise 500 from Postgres). */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(s: string): boolean {
+  return UUID_RE.test(s);
+}
+
+const PUBLIC_MAX_PROPERTIES = 200;
+const AVAILABILITY_MAX_RANGE_DAYS = 365;
+const PUBLIC_CACHE_CONTROL = "public, max-age=60";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -126,9 +142,18 @@ function toPublicProperty(
 
 app.get("/properties", async (c) => {
   const db = getDb(c.env.DATABASE_URL);
-  const [props, units, portfolios] = await Promise.all([
-    db.select().from(crProperties),
-    db.select().from(crUnits),
+  // Filter at the SQL layer and cap the result set — this is a public
+  // unauthenticated endpoint. Only pull units for the properties we return.
+  const props = (await db
+    .select()
+    .from(crProperties)
+    .where(ne(crProperties.status, "inactive"))
+    .limit(PUBLIC_MAX_PROPERTIES)) as Property[];
+  const propIds = props.map((p) => p.id);
+  const [units, portfolios] = await Promise.all([
+    propIds.length
+      ? db.select().from(crUnits).where(inArray(crUnits.property_id, propIds))
+      : Promise.resolve([] as Unit[]),
     db.select().from(crPortfolios),
   ]);
   const portfolioName = new Map<string, string>(
@@ -140,19 +165,19 @@ app.get("/properties", async (c) => {
     arr.push(u);
     unitsByProperty.set(u.property_id, arr);
   }
-  const data = (props as Property[])
-    .filter((p) => p.status !== "inactive")
-    .map((p) =>
-      toPublicProperty(
-        p,
-        unitsByProperty.get(p.id) ?? [],
-        p.portfolio_id ? portfolioName.get(p.portfolio_id) ?? null : null
-      )
-    );
+  const data = props.map((p) =>
+    toPublicProperty(
+      p,
+      unitsByProperty.get(p.id) ?? [],
+      p.portfolio_id ? portfolioName.get(p.portfolio_id) ?? null : null
+    )
+  );
+  c.header("Cache-Control", PUBLIC_CACHE_CONTROL);
   return c.json({
     canon: CHITTY_CANON.service,
     generated_at: new Date().toISOString(),
     count: data.length,
+    limit: PUBLIC_MAX_PROPERTIES,
     data,
   });
 });
@@ -160,7 +185,7 @@ app.get("/properties", async (c) => {
 app.get("/properties/:id", async (c) => {
   const db = getDb(c.env.DATABASE_URL);
   const id = c.req.param("id");
-  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+  if (!isUuid(id)) {
     return c.json({ error: "id must be a UUID" }, 400);
   }
   const [prop] = await db
@@ -199,7 +224,7 @@ app.get("/properties/:id", async (c) => {
 app.get("/units/:id", async (c) => {
   const db = getDb(c.env.DATABASE_URL);
   const id = c.req.param("id");
-  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+  if (!isUuid(id)) {
     return c.json({ error: "id must be a UUID" }, 400);
   }
   const [unit] = await db.select().from(crUnits).where(eq(crUnits.id, id)).limit(1);
@@ -231,16 +256,18 @@ app.get("/units/:id", async (c) => {
 // /availability/:unitId — busy windows only, no PII
 // ---------------------------------------------------------------------------
 
+// "block" reason is reserved for a future source (admin holds / cr_blocks).
+// Don't advertise it in the public contract until code emits it.
 interface BusyWindow {
-  start: string; // ISO date
-  end: string;   // ISO date
-  reason: "lease" | "maintenance" | "block";
+  start: string; // ISO date (inclusive)
+  end: string;   // ISO date (exclusive of next unit day, bounded by `to`)
+  reason: "lease" | "maintenance";
 }
 
 app.get("/availability/:unitId", async (c) => {
   const db = getDb(c.env.DATABASE_URL);
   const unitId = c.req.param("unitId");
-  if (!/^[0-9a-f-]{36}$/i.test(unitId)) {
+  if (!isUuid(unitId)) {
     return c.json({ error: "unitId must be a UUID" }, 400);
   }
 
@@ -258,8 +285,30 @@ app.get("/availability/:unitId", async (c) => {
     return c.json({ error: "from/to must be YYYY-MM-DD" }, 400);
   }
 
+  const spanDays =
+    (Date.parse(`${toDate}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) /
+    86_400_000;
+  if (!Number.isFinite(spanDays) || spanDays < 0) {
+    return c.json({ error: "to must be on or after from" }, 400);
+  }
+  if (spanDays > AVAILABILITY_MAX_RANGE_DAYS) {
+    return c.json(
+      { error: `range must be within ${AVAILABILITY_MAX_RANGE_DAYS} days` },
+      400
+    );
+  }
+
   const [unit] = await db.select().from(crUnits).where(eq(crUnits.id, unitId)).limit(1);
   if (!unit) return c.json({ error: "unit not found" }, 404);
+  // Parity with /units/:id — don't leak windows from inactive properties.
+  const [prop] = await db
+    .select({ status: crProperties.status })
+    .from(crProperties)
+    .where(eq(crProperties.id, unit.property_id))
+    .limit(1);
+  if (!prop || prop.status === "inactive") {
+    return c.json({ error: "unit not found" }, 404);
+  }
 
   const [leases, maintenance] = await Promise.all([
     db
@@ -274,6 +323,8 @@ app.get("/availability/:unitId", async (c) => {
           eq(crLeases.unit_id, unitId),
           inArray(crLeases.status, ["active", "notice", "pending_signature"]),
           lte(crLeases.start_date, toDate),
+          // Exclude leases that ended before the requested window.
+          or(isNull(crLeases.end_date), gte(crLeases.end_date, fromDate))
         )
       ),
     db
@@ -287,6 +338,7 @@ app.get("/availability/:unitId", async (c) => {
           eq(crMaintenance.unit_id, unitId),
           inArray(crMaintenance.status, ["in_progress", "pending_parts"]),
           gte(crMaintenance.created_at, new Date(fromDate)),
+          lte(crMaintenance.created_at, new Date(toDate))
         )
       ),
   ]);
@@ -297,10 +349,10 @@ app.get("/availability/:unitId", async (c) => {
     end_date: string | null;
     status: string;
   }>) {
-    if (l.end_date && l.end_date < fromDate) continue;
+    const rawEnd = l.end_date ?? toDate;
     busy.push({
       start: l.start_date < fromDate ? fromDate : l.start_date,
-      end: l.end_date ?? toDate,
+      end: rawEnd > toDate ? toDate : rawEnd,
       reason: "lease",
     });
   }
@@ -308,13 +360,17 @@ app.get("/availability/:unitId", async (c) => {
     created_at: Date;
     status: string;
   }>) {
-    const start = m.created_at.toISOString().slice(0, 10);
-    // Maintenance windows don't have explicit end; use a conservative 1-day.
-    const d = new Date(m.created_at);
-    d.setDate(d.getDate() + 1);
+    // cr_maintenance has no explicit end column today — ongoing statuses
+    // (`in_progress` / `pending_parts`) are treated as "blocks the unit
+    // through `to`" since there's no duration signal. Closed rows aren't
+    // selected. When a schema-level end/scheduled_until column lands, swap
+    // this fallback for the real value. Manifest documents this assumption.
+    const createdDay = m.created_at.toISOString().slice(0, 10);
+    const start = createdDay < fromDate ? fromDate : createdDay;
+    const end = toDate;
     busy.push({
       start,
-      end: d.toISOString().slice(0, 10),
+      end,
       reason: "maintenance",
     });
   }
@@ -368,13 +424,18 @@ app.get("/mcp/manifest", (c) => {
         public_brand: "https://ch1tty.com",
       },
     },
+    // Every tool inherits the top-level `service.canon` (CHITTY_CANON.service);
+    // we keep tool entries shape-uniform (no per-tool canon) so MCP consumers
+    // don't have to switch on its presence.
     tools: [
       {
         name: "properties.list",
-        description: "List all active properties with nested units and channel listings.",
+        description:
+          "List active properties (up to " +
+          PUBLIC_MAX_PROPERTIES +
+          ") with nested units and resolved channel listings.",
         method: "GET",
         path: "/properties",
-        canon: CHITTY_CANON.service,
       },
       {
         name: "properties.get",
@@ -393,7 +454,12 @@ app.get("/mcp/manifest", (c) => {
       {
         name: "availability.get",
         description:
-          "Busy windows for a unit over a date range. No PII; reasons limited to lease/maintenance/block.",
+          "Busy windows for a unit over a date range. No PII; reasons are " +
+          "`lease` or `maintenance`. Range is capped at " +
+          AVAILABILITY_MAX_RANGE_DAYS +
+          " days. Maintenance rows in `in_progress` / `pending_parts` are " +
+          "reported as blocking through the requested `to` date — " +
+          "cr_maintenance has no explicit end column yet.",
         method: "GET",
         path: "/availability/{unitId}",
         parameters: {
@@ -417,7 +483,6 @@ app.get("/mcp/manifest", (c) => {
         description: "List the booking/distribution channels ChittyRental understands.",
         method: "GET",
         path: "/channels",
-        canon: CHITTY_CANON.channelCatalog,
       },
     ],
   });

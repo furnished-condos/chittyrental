@@ -312,12 +312,20 @@ app.post("/sync-notion", async (c) => {
     // or by editing each map in src/lib/notion-mapping.ts away from defaults.
     const dryRun = !configured || requestedDryRun;
     // TODO(next PR): when `!dryRun`, upsert rows into cr_properties here.
+    // Sync log reflects dry-run state so audit dashboards don't overstate
+    // actual throughput — dry runs report `status: "dry_run"` with zero
+    // records_synced.
     await db.insert(crSyncLog).values({
       source: "notion",
       sync_type: "properties",
       direction: "inbound",
-      status: "completed",
-      records_synced: rows.length,
+      status: dryRun ? "dry_run" : "completed",
+      records_synced: dryRun ? 0 : rows.length,
+      error_message: dryRun
+        ? configured
+          ? "dry_run: caller opted in"
+          : "dry_run: notion mappings not yet verified"
+        : null,
       completed_at: new Date(),
     });
     return c.json({
@@ -363,22 +371,32 @@ app.post("/inventory/sync", async (c) => {
         INVENTORY_SHEET_ID: c.env.INVENTORY_SHEET_ID,
       }),
     ]);
+    const requestedDryRun = c.req.query("dry_run") !== "false";
+    // TODO(Lane C): when `!requestedDryRun` and writes are implemented,
+    // upsert into cr_assets here once the inventory sheet column layout
+    // has been confirmed by the operator. Until then the write path is a
+    // TODO and every call is effectively a dry-run regardless of the query.
+    const writesImplemented = false;
+    const dryRun = !writesImplemented || requestedDryRun;
     await db.insert(crSyncLog).values({
       source: "sheets",
       sync_type: "inventory",
       direction: "inbound",
-      status: "completed",
-      records_synced: master.length + consumables.length,
+      status: dryRun ? "dry_run" : "completed",
+      records_synced: dryRun ? 0 : master.length + consumables.length,
+      error_message: dryRun
+        ? writesImplemented
+          ? "dry_run: caller opted in"
+          : "dry_run: cr_assets write path not implemented yet"
+        : null,
       completed_at: new Date(),
     });
-    const requestedDryRun = c.req.query("dry_run") !== "false";
-    // TODO(next PR): when `!requestedDryRun`, upsert into cr_assets here once
-    // operator has confirmed the inventory sheet column layout.
     return c.json({
       data: {
         master_rows: master.length,
         consumable_rows: consumables.length,
-        dry_run: requestedDryRun,
+        dry_run: dryRun,
+        writes_implemented: writesImplemented,
         sample_master: master.slice(0, 3),
         sample_consumables: consumables.slice(0, 3),
       },
