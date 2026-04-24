@@ -4,8 +4,17 @@ compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
 # Secrets (set via `wrangler secret put`):
-#   DATABASE_URL          — Neon PostgreSQL connection string
-#   CHITTY_AUTH_SERVICE_TOKEN — Service-to-service auth token
+#   DATABASE_URL                — Neon PostgreSQL connection string
+#   CHITTY_AUTH_SERVICE_TOKEN   — Service-to-service auth token
+#   NOTION_GATEWAY_TOKEN        — Bearer for mcp.ch1tty.com (or Notion API secret)
+#   NOTION_DATABASE_ID          — Properties DB on Notion
+#   NOTION_UNITS_DATABASE_ID    — Units DB on Notion (optional)
+#   NOTION_PORTFOLIOS_DATABASE_ID — Portfolios DB on Notion (optional)
+#   GOOGLE_SA_KEY               — base64-encoded service account JSON (GAM-delegated)
+#   GOOGLE_SA_SUBJECT           — admin to impersonate (e.g. gam@chitty.cc)
+#   INVENTORY_SHEET_ID          — 1Zsu533Uy498ekbXdWpMuw8xIPAl5MCjf7mxFYkznyWI
+#   ICAL_SECRET                 — HMAC key for signing unit iCal URLs
+#   GEMINI_API_KEY              — server-side Gemini calls
 
 [vars]
 ENVIRONMENT = "production"
@@ -13,6 +22,8 @@ CHITTYFINANCE_URL = "https://finance.chitty.cc"
 CHITTYGOV_URL = "https://gov.chitty.cc"
 CHITTYCHARGE_URL = "https://charge.chitty.cc"
 CHITTYCONNECT_URL = "https://connect.chitty.cc"
+NOTION_GATEWAY_URL = "https://mcp.ch1tty.com"
+GEMINI_MODEL = "gemini-2.5-flash"
 SERVICE_NAME = "chittyrental"
 
 [[kv_namespaces]]

@@ -14,6 +14,8 @@ import reports from "./routes/reports";
 import payments from "./routes/payments";
 import comms from "./routes/comms";
 import wizard from "./routes/wizard";
+import gam from "./routes/gam";
+import calendar, { publicIcal } from "./routes/calendar";
 
 // ---------------------------------------------------------------------------
 // Environment bindings
@@ -30,6 +32,22 @@ export type AppEnv = {
     CHITTYCONNECT_URL: string;
     SERVICE_NAME: string;
     RENTAL_CACHE: KVNamespace;
+    // Notion gateway (mcp.ch1tty.com or direct Notion API)
+    NOTION_GATEWAY_URL?: string;
+    NOTION_GATEWAY_TOKEN?: string;
+    NOTION_DATABASE_ID?: string;
+    NOTION_UNITS_DATABASE_ID?: string;
+    NOTION_PORTFOLIOS_DATABASE_ID?: string;
+    // Google service account (domain-wide delegated, base64 JSON)
+    GOOGLE_SA_KEY?: string;
+    GOOGLE_SA_SUBJECT?: string;
+    // Inventory sheet
+    INVENTORY_SHEET_ID?: string;
+    // Calendar hub
+    ICAL_SECRET?: string;
+    // Gemini
+    GEMINI_API_KEY?: string;
+    GEMINI_MODEL?: string;
   };
 };
 
@@ -93,5 +111,10 @@ app.route("/api/reports", reports);
 app.route("/api/payments", payments);
 app.route("/api/comms", comms);
 app.route("/api/wizard", wizard);
+app.route("/api/gam", gam);
+app.route("/api/calendar", calendar);
+
+// Public signed iCal export (no auth — HMAC signature verified per request)
+app.route("/ical", publicIcal);
 
 export default app;

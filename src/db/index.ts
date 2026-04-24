@@ -6,3 +6,5 @@ export function getDb(databaseUrl: string) {
   const client = neon(databaseUrl);
   return drizzle(client, { schema });
 }
+
+export type Db = ReturnType<typeof getDb>;

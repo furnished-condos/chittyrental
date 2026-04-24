@@ -66,6 +66,7 @@ export const crProperties = pgTable("cr_properties", {
   external_source: text("external_source"),
   gov_asset_id: text("gov_asset_id"),  // ChittyGov asset reference
   cf_property_id: text("cf_property_id"), // ChittyFinance reference
+  metadata: jsonb("metadata"), // GAM artifacts (shared_drive_id, building_id, home_assistant_webhook, vrbo_id, etc.)
   ...timestamps,
 });
 
@@ -82,6 +83,7 @@ export const crUnits = pgTable("cr_units", {
   sqft: integer("sqft"),
   floor: integer("floor"),
   status: text("status").notNull().default("available"),
+  metadata: jsonb("metadata"), // GAM artifacts (resource_id, resource_email, view_calendar_id, etc.)
   ...timestamps,
 });
 
@@ -217,8 +219,9 @@ export const crAssets = pgTable("cr_assets", {
   vendor: text("vendor"),
   model: text("model"),
   serial_number: text("serial_number"),
-  status: text("status").notNull().default("active"), // active | repair | retired | sold
+  status: text("status").notNull().default("active"), // planned | ordered | received | active | repair | missing | end_of_life | retired | sold | written_off
   warranty_expiration: date("warranty_expiration"),
+  metadata: jsonb("metadata"), // reorder_threshold, life_years, service_interval_days, receipt_url, etc.
   ...timestamps,
 });
 
