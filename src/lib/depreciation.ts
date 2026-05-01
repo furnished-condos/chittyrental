@@ -12,7 +12,7 @@
  *   - crAssets / crFinancialReports / crSyncLog  src/db/schema.ts
  */
 
-import { and, eq, isNotNull, lte } from "drizzle-orm";
+import { and, isNotNull, lte } from "drizzle-orm";
 import type { Db } from "../db";
 import { crAssets, crFinancialReports, crSyncLog } from "../db/schema";
 import { financeClient } from "./clients";
@@ -140,15 +140,17 @@ export function entryFor(asset: Asset, period: string): DepreciationEntry | null
   // Don't depreciate before purchase.
   if (asset.purchase_date > periodEnd) return null;
 
-  const monthsElapsed = monthsBetween(asset.purchase_date, periodEnd);
-  if (monthsElapsed <= 0) return null;
-  const cappedMonths = Math.min(monthsElapsed, totalMonths);
+  // Months in service is inclusive of the purchase month and the current
+  // period; the schedule should emit `totalMonths` entries over the asset's
+  // useful life, with the last one bringing the book value to zero. We skip
+  // strictly past the schedule (monthsInService > totalMonths) — the final
+  // scheduled month still gets an entry.
+  const monthsInService = monthsBetween(asset.purchase_date, periodEnd) + 1;
+  if (monthsInService <= 0) return null;
+  if (monthsInService > totalMonths) return null;
+  const cappedMonths = Math.min(monthsInService, totalMonths);
   const cumulative = monthlyAmount * cappedMonths;
   const remaining = Math.max(0, price - cumulative);
-  // Asset is fully depreciated — no further monthly entry to emit.
-  if (cappedMonths >= totalMonths) {
-    return null;
-  }
 
   return {
     asset_id: asset.id,
@@ -233,46 +235,38 @@ export function rollupByProperty(
 }
 
 /**
- * Idempotent: if a (property_id, period) report already exists, returns
- * 'skipped'; otherwise inserts and returns 'created'.
+ * Idempotent: relies on the partial unique index on
+ * (property_id, start_date, end_date) WHERE report_type='depreciation'
+ * (migrations/0002_depreciation_unique.sql) so concurrent runs (manual +
+ * cron) can't create duplicate reports for the same period. Returns
+ * 'created' when a row was inserted, 'skipped' on conflict.
  */
 export async function writeReport(
   db: Db,
   rollup: PropertyRollup
 ): Promise<"created" | "skipped"> {
   const { start, end } = periodBounds(rollup.period);
-  // Detect existing report by report_type + property_id + period bounds.
-  const existing = await db
-    .select({ id: crFinancialReports.id })
-    .from(crFinancialReports)
-    .where(
-      and(
-        eq(crFinancialReports.report_type, "depreciation"),
-        eq(crFinancialReports.property_id, rollup.property_id),
-        eq(crFinancialReports.start_date, start),
-        eq(crFinancialReports.end_date, end)
-      )
-    )
-    .limit(1);
-  if (existing.length) return "skipped";
-
-  await db.insert(crFinancialReports).values({
-    title: `Depreciation — ${rollup.period}`,
-    report_type: "depreciation",
-    start_date: start,
-    end_date: end,
-    property_id: rollup.property_id,
-    summary: `Straight-line depreciation across ${rollup.entries.length} asset(s); total $${rollup.total_monthly.toFixed(2)} for the month.`,
-    metrics: {
-      period: rollup.period,
-      total_monthly: rollup.total_monthly,
-      total_cumulative: rollup.total_cumulative,
-      total_remaining_book_value: rollup.total_remaining_book_value,
-      by_asset_type: rollup.by_asset_type,
-      entries: rollup.entries,
-    },
-  });
-  return "created";
+  const inserted = await db
+    .insert(crFinancialReports)
+    .values({
+      title: `Depreciation — ${rollup.period}`,
+      report_type: "depreciation",
+      start_date: start,
+      end_date: end,
+      property_id: rollup.property_id,
+      summary: `Straight-line depreciation across ${rollup.entries.length} asset(s); total $${rollup.total_monthly.toFixed(2)} for the month.`,
+      metrics: {
+        period: rollup.period,
+        total_monthly: rollup.total_monthly,
+        total_cumulative: rollup.total_cumulative,
+        total_remaining_book_value: rollup.total_remaining_book_value,
+        by_asset_type: rollup.by_asset_type,
+        entries: rollup.entries,
+      },
+    })
+    .onConflictDoNothing()
+    .returning({ id: crFinancialReports.id });
+  return inserted.length ? "created" : "skipped";
 }
 
 /**
@@ -345,15 +339,18 @@ export async function runDepreciation(
     skipped = fwd.skipped;
   }
 
-  await db.insert(crSyncLog).values({
-    source: "chittyrental",
-    sync_type: "depreciation",
-    direction: "outbound",
-    status: dryRun ? "dry_run" : "completed",
-    records_synced: dryRun ? 0 : reportsWritten,
-    error_message: dryRun ? `dry_run: ${entries.length} entries computed` : null,
-    completed_at: new Date(),
-  });
+  // Dry-run is read-only — preview callers shouldn't create audit rows.
+  if (!dryRun) {
+    await db.insert(crSyncLog).values({
+      source: "chittyrental",
+      sync_type: "depreciation",
+      direction: "outbound",
+      status: "completed",
+      records_synced: reportsWritten,
+      error_message: null,
+      completed_at: new Date(),
+    });
+  }
 
   return {
     period,
