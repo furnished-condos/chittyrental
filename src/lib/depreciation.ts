@@ -74,7 +74,13 @@ export interface RunResult {
   reports_written: number;
 }
 
-/** Period helpers — period is `YYYY-MM`, lower-bounded inclusive on the 1st. */
+/**
+ * Compute the inclusive start and end dates for a month specified as `YYYY-MM`.
+ *
+ * @param period - Month in `YYYY-MM` format
+ * @returns An object with `start` set to the month's first day and `end` set to the month's last day, both in `YYYY-MM-DD` format
+ * @throws Error if `period` is not a valid `YYYY-MM` string
+ */
 export function periodBounds(period: string): { start: string; end: string } {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
     throw new Error(`invalid period: ${period} (expected YYYY-MM)`);
@@ -89,6 +95,12 @@ export function periodBounds(period: string): { start: string; end: string } {
   return { start, end };
 }
 
+/**
+ * Compute the previous calendar month relative to a reference date.
+ *
+ * @param now - Reference date for the calculation; uses current time when omitted. The computation uses UTC year/month fields.
+ * @returns The previous month in `YYYY-MM` format (UTC).
+ */
 export function previousPeriod(now: Date = new Date()): string {
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
   return `${d.getUTCFullYear()}-${(d.getUTCMonth() + 1)
@@ -96,6 +108,16 @@ export function previousPeriod(now: Date = new Date()): string {
     .padStart(2, "0")}`;
 }
 
+/**
+ * Determine the useful life in years for an asset.
+ *
+ * Prefers an explicit `asset.metadata.life_years` when it is a positive number or a numeric string.
+ * If not present or invalid, falls back to `DEFAULT_LIFE_YEARS[asset.asset_type]`, and finally
+ * to `FALLBACK_LIFE_YEARS` when no mapping exists for the asset type.
+ *
+ * @param asset - The asset whose useful life should be determined
+ * @returns The number of years to use for depreciation calculations
+ */
 function lifeYearsFor(asset: Asset): number {
   const meta = (asset.metadata as Record<string, unknown> | null) ?? {};
   const meta_life = meta.life_years;
@@ -107,6 +129,15 @@ function lifeYearsFor(asset: Asset): number {
   return DEFAULT_LIFE_YEARS[asset.asset_type] ?? FALLBACK_LIFE_YEARS;
 }
 
+/**
+ * Compute the number of whole calendar months between two ISO dates.
+ *
+ * Both inputs must be in `YYYY-MM-DD` format; only the year and month components are used.
+ *
+ * @param fromIso - The start date string in `YYYY-MM-DD` format
+ * @param toIso - The end date string in `YYYY-MM-DD` format
+ * @returns The non-negative integer count of whole months from `fromIso` to `toIso` (based on year/month difference, clamped to `0`)
+ */
 function monthsBetween(fromIso: string, toIso: string): number {
   // Floor of (toIso - fromIso) in whole months. Both args are YYYY-MM-DD.
   const [fy, fm] = fromIso.split("-").map(Number);
@@ -115,9 +146,11 @@ function monthsBetween(fromIso: string, toIso: string): number {
 }
 
 /**
- * Compute straight-line depreciation entries for one asset for the given
- * period. Returns null when the asset isn't depreciable (no purchase date /
- * price, or purchase is after the period, or already fully depreciated).
+ * Compute the straight-line depreciation entry for an asset for a specific period.
+ *
+ * @param asset - The asset record to compute depreciation for
+ * @param period - Target period in `YYYY-MM` format
+ * @returns A `DepreciationEntry` for the asset and period, or `null` if the asset is not depreciable for that period (missing or invalid purchase data, retired/sold/written_off status, purchased after the period end, or already fully depreciated)
  */
 export function entryFor(asset: Asset, period: string): DepreciationEntry | null {
   if (!asset.purchase_date || !asset.purchase_price) return null;
@@ -168,11 +201,22 @@ export function entryFor(asset: Asset, period: string): DepreciationEntry | null
   };
 }
 
+/**
+ * Round a number to two decimal places.
+ *
+ * @param n - The input number to round
+ * @returns The value rounded to two decimal places
+ */
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** Compute entries across every depreciable asset for the period. */
+/**
+ * Computes depreciation entries for all depreciable assets within the given period.
+ *
+ * @param period - Target period in `YYYY-MM` format; assets purchased on or before the period end are considered.
+ * @returns An array of `DepreciationEntry` objects for assets that are depreciable in the specified period.
+ */
 export async function computeMonthlyDepreciation(
   db: Db,
   period: string
@@ -199,6 +243,13 @@ export async function computeMonthlyDepreciation(
   return out;
 }
 
+/**
+ * Group depreciation entries by property and compute per-property totals for the given period.
+ *
+ * @param entries - Computed depreciation entries to group
+ * @param period - Period identifier in `YYYY-MM` format used for each rollup
+ * @returns An array of `PropertyRollup` objects (one per `property_id`) containing rounded totals (`total_monthly`, `total_cumulative`, `total_remaining_book_value`), the original `entries` for that property, and `by_asset_type` totals keyed by `asset_type`
+ */
 export function rollupByProperty(
   entries: DepreciationEntry[],
   period: string
@@ -235,11 +286,14 @@ export function rollupByProperty(
 }
 
 /**
- * Idempotent: relies on the partial unique index on
- * (property_id, start_date, end_date) WHERE report_type='depreciation'
- * (migrations/0002_depreciation_unique.sql) so concurrent runs (manual +
- * cron) can't create duplicate reports for the same period. Returns
- * 'created' when a row was inserted, 'skipped' on conflict.
+ * Inserts a per-property depreciation report row for the rollup's period, avoiding duplicates.
+ *
+ * Uses the DB's partial unique index on (property_id, start_date, end_date) WHERE report_type='depreciation'
+ * to ensure idempotent behavior across concurrent runs.
+ *
+ * @param db - Database client used to perform the insert
+ * @param rollup - Property rollup containing period, property_id, totals, and entries to persist as the report
+ * @returns `created` if a new report row was inserted, `skipped` if a conflicting row already exists
  */
 export async function writeReport(
   db: Db,
@@ -270,10 +324,14 @@ export async function writeReport(
 }
 
 /**
- * Forward each entry to ChittyFinance as an expense transaction. Returns
- * counts for { forwarded, skipped }. Skips silently when the client isn't
- * configured (CHITTYFINANCE_URL not set) — graceful degradation matching
- * the existing pattern.
+ * Forward depreciation entries to ChittyFinance as expense transactions.
+ *
+ * If the finance client cannot be created from `env`, all entries are treated as skipped.
+ * Processing continues on per-entry failures so a single failure does not abort the batch.
+ *
+ * @param env - Environment/config used to construct the finance client
+ * @param entries - Depreciation entries to forward
+ * @returns Counts of processed entries: `forwarded` is the number successfully posted, `skipped` is the number not posted
  */
 export async function forwardToFinance(
   env: Parameters<typeof financeClient>[0],
@@ -313,8 +371,21 @@ export async function forwardToFinance(
 }
 
 /**
- * End-to-end orchestration. dryRun=true computes + returns the summary
- * without persisting reports or forwarding to ChittyFinance.
+ * Run the monthly depreciation pipeline for a given period, computing per-asset entries, aggregating per-property rollups, and optionally persisting reports and forwarding transactions.
+ *
+ * When `dryRun` is true the function performs only computations and returns the summary without writing reports, forwarding to the finance system, or creating an audit row.
+ *
+ * @param period - Period to process in `YYYY-MM` format
+ * @param dryRun - If true, perform computation-only and do not persist reports or forward transactions
+ * @returns An object summarizing the run containing:
+ *  - `period`: the processed period string,
+ *  - `dry_run`: whether the run was a dry run,
+ *  - `properties`: number of property rollups produced,
+ *  - `entries`: number of depreciation entries computed,
+ *  - `total_amount`: total monthly depreciation amount rounded to 2 decimals,
+ *  - `finance_forwarded`: count of entries successfully forwarded to the finance system,
+ *  - `finance_skipped`: count of entries skipped/failed when forwarding,
+ *  - `reports_written`: number of report rows created in the database
  */
 export async function runDepreciation(
   env: Parameters<typeof financeClient>[0],

@@ -152,7 +152,15 @@ app.route("/ical", publicIcal);
 //
 // Cron-driven runs are real (dryRun=false). Manual previews go through
 // POST /api/finance/depreciation/run instead.
-// ---------------------------------------------------------------------------
+/**
+ * Handles scheduled cron triggers and, for the monthly depreciation cron, schedules a depreciation run for the previous accounting period.
+ *
+ * When `controller.cron` equals `"0 5 1 * *"`, computes the previous period from `controller.scheduledTime` and initiates `runDepreciation` (dry run = `false`) via `ctx.waitUntil`; any errors from the depreciation task are caught and logged.
+ *
+ * @param controller - The scheduled event controller containing the cron expression and scheduledTime
+ * @param env - Environment bindings (service URLs, secrets, and KV namespaces)
+ * @param ctx - Execution context used to extend worker lifetime with `waitUntil`
+ */
 
 async function scheduled(
   controller: ScheduledController,
