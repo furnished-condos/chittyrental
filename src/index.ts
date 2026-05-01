@@ -17,6 +17,9 @@ import wizard from "./routes/wizard";
 import gam from "./routes/gam";
 import calendar, { publicIcal } from "./routes/calendar";
 import publicApi from "./routes/public";
+import finance from "./routes/finance";
+import { previousPeriod, runDepreciation } from "./lib/depreciation";
+import { getDb } from "./db";
 
 // ---------------------------------------------------------------------------
 // Environment bindings
@@ -136,8 +139,38 @@ app.route("/api/comms", comms);
 app.route("/api/wizard", wizard);
 app.route("/api/gam", gam);
 app.route("/api/calendar", calendar);
+app.route("/api/finance", finance);
 
 // Public signed iCal export (no auth — HMAC signature verified per request)
 app.route("/ical", publicIcal);
 
-export default app;
+// ---------------------------------------------------------------------------
+// Scheduled handler — wrangler.toml `[triggers] crons` invokes this.
+//
+// Cron schedule => task:
+//   "0 5 1 * *"  => depreciation pass for the previous calendar month.
+//
+// Cron-driven runs are real (dryRun=false). Manual previews go through
+// POST /api/finance/depreciation/run instead.
+// ---------------------------------------------------------------------------
+
+async function scheduled(
+  controller: ScheduledController,
+  env: AppEnv["Bindings"],
+  ctx: ExecutionContext
+): Promise<void> {
+  if (controller.cron === "0 5 1 * *") {
+    const db = getDb(env.DATABASE_URL);
+    const period = previousPeriod(new Date(controller.scheduledTime));
+    ctx.waitUntil(
+      runDepreciation(env, db, period, false).catch((err) => {
+        console.error("depreciation cron failed", { period, err: String(err) });
+      })
+    );
+  }
+}
+
+export default {
+  fetch: app.fetch,
+  scheduled,
+};
