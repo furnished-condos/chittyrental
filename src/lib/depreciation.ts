@@ -420,12 +420,24 @@ export async function previewDepreciation(
 }
 
 /**
- * Run the monthly depreciation pipeline for a given period, computing per-asset entries, aggregating per-property rollups, and optionally persisting reports and forwarding transactions.
+ * Run the monthly depreciation pipeline for a given period, computing
+ * per-asset entries, aggregating per-property rollups, and (when not
+ * dry-run) persisting reports and forwarding transactions.
  *
- * When `dryRun` is true the function performs only computations and returns the summary without writing reports, forwarding to the finance system, or creating an audit row.
+ * **Always writes a cr_sync_log row** reflecting the run state:
+ *   - `status: "completed"` on a successful non-dry-run
+ *   - `status: "dry_run"` on a dry-run
+ *   - `status: "failed"` if compute/write/forwarding throws (the error
+ *     is then re-thrown to the caller)
+ *
+ * When `dryRun` is true the function still computes entries and writes
+ * the audit row, but skips the cr_financial_reports inserts and finance
+ * forwards. Pure compute with **no writes at all** is available via
+ * `previewDepreciation()` (used by GET /api/finance/depreciation/preview).
  *
  * @param period - Period to process in `YYYY-MM` format
- * @param dryRun - If true, perform computation-only and do not persist reports or forward transactions
+ * @param dryRun - If true, skip report persistence + finance forwarding
+ *                 (cr_sync_log row still written for audit consistency)
  * @returns An object summarizing the run containing:
  *  - `period`: the processed period string,
  *  - `dry_run`: whether the run was a dry run,
@@ -469,24 +481,33 @@ export async function runDepreciation(
   } finally {
     // Always log every operator-triggered or scheduled run so the audit
     // trail is consistent (matches src/routes/gam.ts dry-run logging).
-    // Use try/finally so an unexpected throw still records a "failed"
-    // row before re-throwing — Copilot review: scheduled runs shouldn't
-    // silently disappear from audit dashboards.
+    // The insert is wrapped in its own try/catch so a sync_log write
+    // failure (DB outage, migration drift) doesn't override the original
+    // compute/forwarding error from the outer try/catch.
     const status = runError ? "failed" : dryRun ? "dry_run" : "completed";
     const errorMessage = runError
       ? runError
       : !dryRun && financeErrors.length
       ? `${financeErrors.length} finance forwards failed; first: ${financeErrors[0]}`
       : null;
-    await db.insert(crSyncLog).values({
-      source: "chittyrental",
-      sync_type: "depreciation",
-      direction: "outbound",
-      status,
-      records_synced: dryRun ? 0 : reportsWritten,
-      error_message: errorMessage,
-      completed_at: new Date(),
-    });
+    try {
+      await db.insert(crSyncLog).values({
+        source: "chittyrental",
+        sync_type: "depreciation",
+        direction: "outbound",
+        status,
+        records_synced: dryRun ? 0 : reportsWritten,
+        error_message: errorMessage,
+        completed_at: new Date(),
+      });
+    } catch (logErr) {
+      console.error("depreciation: failed to write cr_sync_log", {
+        period,
+        status,
+        run_error: runError,
+        log_error: String(logErr).slice(0, 200),
+      });
+    }
   }
 
   const totalAmount = entries.reduce((acc, e) => acc + e.monthly_amount, 0);

@@ -553,8 +553,9 @@ describe("forwardToFinance", () => {
     });
   });
 
-  it("returns {forwarded:0,skipped:0} for empty entries even with client configured", async () => {
-    // The client won't be called but would be configured
+  it("returns {forwarded:0,skipped:0,errors:[]} for empty entries with client unconfigured", async () => {
+    // No entries are forwarded, and the client is unconfigured in this
+    // scenario — so even the unconfigured-client error message is empty.
     const result = await forwardToFinance({ CHITTYFINANCE_URL: undefined } as never, []);
     expect(result).toEqual({ forwarded: 0, skipped: 0, errors: [] });
   });
