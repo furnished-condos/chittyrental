@@ -16,11 +16,12 @@ vi.mock("../../lib/depreciation", async (importOriginal) => {
     ...original,
     // Keep pure helpers (periodBounds, previousPeriod) from real implementation.
     runDepreciation: vi.fn(),
+    previewDepreciation: vi.fn(),
   };
 });
 
 import { getDb } from "../../db";
-import { runDepreciation } from "../../lib/depreciation";
+import { previewDepreciation, runDepreciation } from "../../lib/depreciation";
 import financeRouter from "../finance";
 
 // ---------------------------------------------------------------------------
@@ -200,8 +201,16 @@ describe("POST /depreciation/run", () => {
 
 describe("GET /depreciation/preview", () => {
   beforeEach(() => {
+    // Clear mock state from the POST /run describe block above so the
+    // "never calls runDepreciation" assertion isn't polluted.
+    vi.mocked(runDepreciation).mockClear();
     vi.mocked(getDb).mockReturnValue({} as ReturnType<typeof getDb>);
-    vi.mocked(runDepreciation).mockResolvedValue(makeRunResult());
+    // /preview now calls previewDepreciation (pure compute, no writes)
+    // rather than runDepreciation.
+    vi.mocked(previewDepreciation).mockResolvedValue({
+      ...makeRunResult(),
+      dry_run: true,
+    });
   });
 
   it("returns 200 with result for a valid period", async () => {
@@ -216,11 +225,10 @@ describe("GET /depreciation/preview", () => {
     const app = makeApp();
     const res = await app.request("/depreciation/preview", {}, testEnv);
     expect(res.status).toBe(200);
-    expect(runDepreciation).toHaveBeenCalledWith(
+    expect(previewDepreciation).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
-      expect.stringMatching(/^\d{4}-(0[1-9]|1[0-2])$/),
-      true // always dry run
+      expect.stringMatching(/^\d{4}-(0[1-9]|1[0-2])$/)
     );
   });
 
@@ -232,19 +240,19 @@ describe("GET /depreciation/preview", () => {
     expect(body.error).toMatch(/period must be YYYY-MM/);
   });
 
-  it("always calls runDepreciation with dryRun=true regardless of any param", async () => {
+  it("never calls runDepreciation (preview is pure compute)", async () => {
     const app = makeApp();
     await app.request("/depreciation/preview?period=2024-03", {}, testEnv);
-    expect(runDepreciation).toHaveBeenCalledWith(
+    expect(previewDepreciation).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
-      "2024-03",
-      true
+      "2024-03"
     );
+    expect(runDepreciation).not.toHaveBeenCalled();
   });
 
-  it("returns 500 when runDepreciation throws", async () => {
-    vi.mocked(runDepreciation).mockRejectedValue(new Error("timeout"));
+  it("returns 500 when previewDepreciation throws", async () => {
+    vi.mocked(previewDepreciation).mockRejectedValue(new Error("timeout"));
     const app = makeApp();
     const res = await app.request("/depreciation/preview?period=2024-03", {}, testEnv);
     expect(res.status).toBe(500);
@@ -259,8 +267,11 @@ describe("GET /depreciation/preview", () => {
   });
 
   it("returns the RunResult inside { data: ... }", async () => {
-    const expected = makeRunResult({ entries: 5, properties: 2, total_amount: 150 });
-    vi.mocked(runDepreciation).mockResolvedValue(expected);
+    const expected = {
+      ...makeRunResult({ entries: 5, properties: 2, total_amount: 150 }),
+      dry_run: true,
+    };
+    vi.mocked(previewDepreciation).mockResolvedValue(expected);
     const app = makeApp();
     const res = await app.request("/depreciation/preview?period=2024-03", {}, testEnv);
     const body = await res.json<{ data: typeof expected }>();
@@ -271,11 +282,10 @@ describe("GET /depreciation/preview", () => {
     const app = makeApp();
     const res = await app.request("/depreciation/preview?period=2023-12", {}, testEnv);
     expect(res.status).toBe(200);
-    expect(runDepreciation).toHaveBeenCalledWith(
+    expect(previewDepreciation).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
-      "2023-12",
-      true
+      "2023-12"
     );
   });
 

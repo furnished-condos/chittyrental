@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   DEFAULT_LIFE_YEARS,
   periodBounds,
@@ -545,13 +545,17 @@ describe("forwardToFinance", () => {
 
   it("returns all as skipped when CHITTYFINANCE_URL is not set", async () => {
     const result = await forwardToFinance({ CHITTYFINANCE_URL: undefined } as never, entries);
-    expect(result).toEqual({ forwarded: 0, skipped: 2 });
+    expect(result).toEqual({
+      forwarded: 0,
+      skipped: 2,
+      errors: ["financeClient unconfigured"],
+    });
   });
 
   it("returns {forwarded:0,skipped:0} for empty entries even with client configured", async () => {
     // The client won't be called but would be configured
     const result = await forwardToFinance({ CHITTYFINANCE_URL: undefined } as never, []);
-    expect(result).toEqual({ forwarded: 0, skipped: 0 });
+    expect(result).toEqual({ forwarded: 0, skipped: 0, errors: [] });
   });
 
   it("increments forwarded count for each successful post", async () => {
@@ -627,24 +631,12 @@ describe("runDepreciation", () => {
     const fromMock = vi.fn().mockReturnValue({ where: whereMock });
     const selectMock = vi.fn().mockReturnValue({ from: fromMock });
 
-    // Insert chain shared by writeReport and crSyncLog
-    const returning = vi.fn().mockResolvedValue(insertReturns);
-    const onConflictDoNothing = vi.fn().mockReturnValue({ returning });
-    const values = vi.fn().mockReturnValue({ onConflictDoNothing, then: undefined });
-    // crSyncLog insert just calls .values() which needs to be awaitable
+    // crSyncLog insert just calls .values() which needs to be awaitable.
+    // runDepreciation calls:
+    //   db.insert(crFinancialReports).values({}).onConflictDoNothing().returning({})
+    //   db.insert(crSyncLog).values({...})  ← awaited directly
+    // Dispatch by call order so each chain is shaped correctly:
     const syncLogValues = vi.fn().mockResolvedValue([]);
-    const insertMock = vi.fn().mockImplementation((table) => {
-      // Return different chains for different tables
-      const isFinancialReports =
-        table && typeof table === "object" && "_" in table;
-      void isFinancialReports;
-      return { values, onConflictDoNothing };
-    });
-
-    // Make values awaitable for crSyncLog (which doesn't call .returning())
-    // Actually runDepreciation calls: db.insert(crSyncLog).values({...}) — awaited directly
-    // and db.insert(crFinancialReports).values({}).onConflictDoNothing().returning({})
-    // We need both chains. Let's use call order:
     let insertCallCount = 0;
     const flexInsert = vi.fn().mockImplementation(() => {
       insertCallCount++;
@@ -677,11 +669,16 @@ describe("runDepreciation", () => {
     });
   });
 
-  it("does not call insert in dry-run mode", async () => {
+  it("dry-run skips report+finance writes but still logs to cr_sync_log", async () => {
+    // Per the audit-consistency split: runDepreciation always logs every
+    // run (status: dry_run | completed | failed). The pure-compute,
+    // never-writes path is previewDepreciation (used by GET /preview),
+    // tested separately.
     const asset = makeAsset({ purchase_date: "2024-01-01", purchase_price: "840.00" });
     const db = makeFullDbMock({ assets: [asset] });
     await runDepreciation({} as never, db, period, true);
-    expect((db.insert as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+    // Exactly one insert: the cr_sync_log audit row. No cr_financial_reports.
+    expect((db.insert as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
   });
 
   it("writes reports and sync log in non-dry-run mode", async () => {

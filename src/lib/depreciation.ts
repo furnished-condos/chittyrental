@@ -164,26 +164,39 @@ export function entryFor(asset: Asset, period: string): DepreciationEntry | null
   }
   const price = Number(asset.purchase_price);
   if (!Number.isFinite(price) || price <= 0) return null;
+  const priceCents = Math.round(price * 100);
+  if (priceCents <= 0) return null;
 
   const lifeYears = lifeYearsFor(asset);
-  const totalMonths = lifeYears * 12;
-  const monthlyAmount = price / totalMonths;
+  // Normalize to integer months — fractional life_years (e.g. 7.5) would
+  // otherwise produce a non-integer totalMonths that monthsInService (an
+  // integer) could never equal, so the final scheduled month would never
+  // emit. Ceil keeps total amortization period >= lifeYears.
+  const totalMonths = Math.max(1, Math.ceil(lifeYears * 12));
+  // Schedule in integer cents so the lifetime sum equals priceCents
+  // exactly. Months 1..(totalMonths-1) emit `monthlyCents`; the final
+  // month absorbs the rounding remainder so cumulative == priceCents.
+  const monthlyCents = Math.floor(priceCents / totalMonths);
+  const finalMonthCents = priceCents - monthlyCents * (totalMonths - 1);
 
   const { end: periodEnd } = periodBounds(period);
   // Don't depreciate before purchase.
   if (asset.purchase_date > periodEnd) return null;
 
   // Months in service is inclusive of the purchase month and the current
-  // period; the schedule should emit `totalMonths` entries over the asset's
-  // useful life, with the last one bringing the book value to zero. We skip
-  // strictly past the schedule (monthsInService > totalMonths) — the final
-  // scheduled month still gets an entry.
+  // period; the schedule emits exactly `totalMonths` entries over the
+  // asset's useful life, with the last one bringing the book value to
+  // zero. We skip strictly past the schedule (monthsInService >
+  // totalMonths) — the final scheduled month still gets an entry.
   const monthsInService = monthsBetween(asset.purchase_date, periodEnd) + 1;
   if (monthsInService <= 0) return null;
   if (monthsInService > totalMonths) return null;
-  const cappedMonths = Math.min(monthsInService, totalMonths);
-  const cumulative = monthlyAmount * cappedMonths;
-  const remaining = Math.max(0, price - cumulative);
+  const isFinalMonth = monthsInService === totalMonths;
+  const monthAmountCents = isFinalMonth ? finalMonthCents : monthlyCents;
+  const cumulativeCents = isFinalMonth
+    ? priceCents
+    : monthlyCents * monthsInService;
+  const remainingCents = priceCents - cumulativeCents;
 
   return {
     asset_id: asset.id,
@@ -192,9 +205,9 @@ export function entryFor(asset: Asset, period: string): DepreciationEntry | null
     asset_name: asset.name,
     asset_type: asset.asset_type,
     period,
-    monthly_amount: round2(monthlyAmount),
-    cumulative_amount: round2(cumulative),
-    remaining_book_value: round2(remaining),
+    monthly_amount: monthAmountCents / 100,
+    cumulative_amount: cumulativeCents / 100,
+    remaining_book_value: remainingCents / 100,
     life_years: lifeYears,
     purchase_date: asset.purchase_date,
     purchase_price: price,
@@ -336,11 +349,18 @@ export async function writeReport(
 export async function forwardToFinance(
   env: Parameters<typeof financeClient>[0],
   entries: DepreciationEntry[]
-): Promise<{ forwarded: number; skipped: number }> {
+): Promise<{ forwarded: number; skipped: number; errors: string[] }> {
   const client = financeClient(env);
-  if (!client) return { forwarded: 0, skipped: entries.length };
+  if (!client) {
+    return {
+      forwarded: 0,
+      skipped: entries.length,
+      errors: entries.length ? ["financeClient unconfigured"] : [],
+    };
+  }
   let forwarded = 0;
   let skipped = 0;
+  const errors: string[] = [];
   for (const e of entries) {
     try {
       await client.post("/transactions", {
@@ -361,13 +381,42 @@ export async function forwardToFinance(
         },
       });
       forwarded++;
-    } catch {
+    } catch (err) {
       // Don't abort the whole batch on one failure; the next pass will retry
       // anything missing because forwarding is keyed on `external_id`.
+      // Capture per-failure context so the operator can see what's broken
+      // instead of a "skipped: 47, completed" log row that hides everything.
+      errors.push(
+        `cr-dep-${e.asset_id}-${e.period}: ${String(err).slice(0, 200)}`
+      );
       skipped++;
     }
   }
-  return { forwarded, skipped };
+  return { forwarded, skipped, errors };
+}
+
+/**
+ * Pure-compute preview — never writes. GET /api/finance/depreciation/preview
+ * uses this so the read-only endpoint stays read-only.
+ */
+export async function previewDepreciation(
+  _env: Parameters<typeof financeClient>[0],
+  db: Db,
+  period: string
+): Promise<RunResult> {
+  const entries = await computeMonthlyDepreciation(db, period);
+  const rollups = rollupByProperty(entries, period);
+  const totalAmount = entries.reduce((acc, e) => acc + e.monthly_amount, 0);
+  return {
+    period,
+    dry_run: true,
+    properties: rollups.length,
+    entries: entries.length,
+    total_amount: round2(totalAmount),
+    finance_forwarded: 0,
+    finance_skipped: 0,
+    reports_written: 0,
+  };
 }
 
 /**
@@ -393,36 +442,54 @@ export async function runDepreciation(
   period: string,
   dryRun: boolean
 ): Promise<RunResult> {
-  const entries = await computeMonthlyDepreciation(db, period);
-  const rollups = rollupByProperty(entries, period);
-  const totalAmount = entries.reduce((acc, e) => acc + e.monthly_amount, 0);
-
+  let entries: DepreciationEntry[] = [];
+  let rollups: PropertyRollup[] = [];
   let reportsWritten = 0;
   let forwarded = 0;
   let skipped = 0;
-  if (!dryRun) {
-    for (const r of rollups) {
-      const outcome = await writeReport(db, r);
-      if (outcome === "created") reportsWritten++;
-    }
-    const fwd = await forwardToFinance(env, entries);
-    forwarded = fwd.forwarded;
-    skipped = fwd.skipped;
-  }
+  let financeErrors: string[] = [];
+  let runError: string | null = null;
+  try {
+    entries = await computeMonthlyDepreciation(db, period);
+    rollups = rollupByProperty(entries, period);
 
-  // Dry-run is read-only — preview callers shouldn't create audit rows.
-  if (!dryRun) {
+    if (!dryRun) {
+      for (const r of rollups) {
+        const outcome = await writeReport(db, r);
+        if (outcome === "created") reportsWritten++;
+      }
+      const fwd = await forwardToFinance(env, entries);
+      forwarded = fwd.forwarded;
+      skipped = fwd.skipped;
+      financeErrors = fwd.errors;
+    }
+  } catch (err) {
+    runError = String(err).slice(0, 500);
+    throw err;
+  } finally {
+    // Always log every operator-triggered or scheduled run so the audit
+    // trail is consistent (matches src/routes/gam.ts dry-run logging).
+    // Use try/finally so an unexpected throw still records a "failed"
+    // row before re-throwing — Copilot review: scheduled runs shouldn't
+    // silently disappear from audit dashboards.
+    const status = runError ? "failed" : dryRun ? "dry_run" : "completed";
+    const errorMessage = runError
+      ? runError
+      : !dryRun && financeErrors.length
+      ? `${financeErrors.length} finance forwards failed; first: ${financeErrors[0]}`
+      : null;
     await db.insert(crSyncLog).values({
       source: "chittyrental",
       sync_type: "depreciation",
       direction: "outbound",
-      status: "completed",
-      records_synced: reportsWritten,
-      error_message: null,
+      status,
+      records_synced: dryRun ? 0 : reportsWritten,
+      error_message: errorMessage,
       completed_at: new Date(),
     });
   }
 
+  const totalAmount = entries.reduce((acc, e) => acc + e.monthly_amount, 0);
   return {
     period,
     dry_run: dryRun,

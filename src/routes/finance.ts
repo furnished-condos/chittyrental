@@ -1,7 +1,11 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../index";
 import { getDb } from "../db";
-import { previousPeriod, runDepreciation } from "../lib/depreciation";
+import {
+  previewDepreciation,
+  previousPeriod,
+  runDepreciation,
+} from "../lib/depreciation";
 
 const app = new Hono<AppEnv>();
 
@@ -29,8 +33,11 @@ app.post("/depreciation/run", async (c) => {
 });
 
 /**
- * Read-only preview of the depreciation pass (always dry-run). Useful for
- * dashboards that want to show "what would the numbers look like for X".
+ * Read-only preview of the depreciation pass. Pure compute — does not
+ * write to cr_financial_reports, cr_sync_log, or ChittyFinance. Useful
+ * for dashboards that want to show "what would the numbers look like
+ * for X". For an audited dry-run that DOES log, call POST /run with
+ * `?dry_run=true`.
  */
 app.get("/depreciation/preview", async (c) => {
   const period = c.req.query("period") ?? previousPeriod();
@@ -39,7 +46,7 @@ app.get("/depreciation/preview", async (c) => {
   }
   const db = getDb(c.env.DATABASE_URL);
   try {
-    const result = await runDepreciation(c.env, db, period, true);
+    const result = await previewDepreciation(c.env, db, period);
     return c.json({ data: result });
   } catch (err) {
     return c.json({ error: String(err) }, 500);
