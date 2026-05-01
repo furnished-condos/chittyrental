@@ -36,3 +36,8 @@ service = "chittytrack"
 
 [observability]
 enabled = true
+
+# Scheduled tasks (handled in src/index.ts `scheduled()`)
+#   0 5 1 * *  — monthly depreciation pass on the 1st at 05:00 UTC
+[triggers]
+crons = ["0 5 1 * *"]
