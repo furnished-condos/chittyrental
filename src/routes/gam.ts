@@ -21,7 +21,7 @@ import {
   slug,
 } from "../lib/gam";
 import { configStatus as notionStatus, fetchProperties as fetchNotionProperties } from "../lib/notion";
-import { pullMaster, pullConsumables } from "../lib/inventory";
+import { pullMaster } from "../lib/inventory";
 
 const app = new Hono<AppEnv>();
 
@@ -359,18 +359,11 @@ app.post("/inventory/sync", async (c) => {
     return c.json({ error: "GOOGLE_SA_KEY / INVENTORY_SHEET_ID not set" }, 400);
   }
   try {
-    const [master, consumables] = await Promise.all([
-      pullMaster({
-        GOOGLE_SA_KEY: c.env.GOOGLE_SA_KEY,
-        GOOGLE_SA_SUBJECT: c.env.GOOGLE_SA_SUBJECT,
-        INVENTORY_SHEET_ID: c.env.INVENTORY_SHEET_ID,
-      }),
-      pullConsumables({
-        GOOGLE_SA_KEY: c.env.GOOGLE_SA_KEY,
-        GOOGLE_SA_SUBJECT: c.env.GOOGLE_SA_SUBJECT,
-        INVENTORY_SHEET_ID: c.env.INVENTORY_SHEET_ID,
-      }),
-    ]);
+    const master = await pullMaster({
+      GOOGLE_SA_KEY: c.env.GOOGLE_SA_KEY,
+      GOOGLE_SA_SUBJECT: c.env.GOOGLE_SA_SUBJECT,
+      INVENTORY_SHEET_ID: c.env.INVENTORY_SHEET_ID,
+    });
     const requestedDryRun = c.req.query("dry_run") !== "false";
     // TODO(Lane C): when `!requestedDryRun` and writes are implemented,
     // upsert into cr_assets here once the inventory sheet column layout
@@ -383,7 +376,7 @@ app.post("/inventory/sync", async (c) => {
       sync_type: "inventory",
       direction: "inbound",
       status: dryRun ? "dry_run" : "completed",
-      records_synced: dryRun ? 0 : master.length + consumables.length,
+      records_synced: dryRun ? 0 : master.length,
       error_message: dryRun
         ? writesImplemented
           ? "dry_run: caller opted in"
@@ -394,11 +387,9 @@ app.post("/inventory/sync", async (c) => {
     return c.json({
       data: {
         master_rows: master.length,
-        consumable_rows: consumables.length,
         dry_run: dryRun,
         writes_implemented: writesImplemented,
         sample_master: master.slice(0, 3),
-        sample_consumables: consumables.slice(0, 3),
       },
     });
   } catch (err) {

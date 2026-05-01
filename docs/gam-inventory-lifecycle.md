@@ -57,58 +57,72 @@ Stored in `cr_assets.status` (extended values — no schema change):
 State changes write a row to `cr_sync_log` (sync_type `inventory_state`,
 metadata with prev/next).
 
-## Sheet schema (TBD — placeholders)
+## Sheet schema
 
-> **Action required:** confirm real tabs and columns against the live
-> sheet. Fill the placeholders in `src/lib/inventory-mapping.ts`.
+The inventory sheet starts as a simple roster ("starting place") and grows
+into the full schedule below as operators add columns. Mapping is by
+**header name** rather than column letter, so adding a column to the
+sheet automatically lights it up in the sync — no code change required.
 
-Assumed tabs:
+The canonical tab is `Global` (one row per asset across all properties).
+Per-property tabs (e.g. `Lakeside Loft`) are presumed to be filtered
+views of the same data and are not read separately.
 
-| Tab | Purpose |
-|---|---|
-| `Master` | One row per asset across all properties |
-| `Consumables` | Reorder-tracked items per property |
-| `Templates` | Per-property-type default kit (studio, 1BR, 2BR, SFH) |
-| `Vendors` | Preferred vendor directory |
-| `Warranties` | Extended warranty tracking |
+### Starting place — columns currently in the draft sheet
 
-### `Master` tab — assumed columns
-
-| Col | Header (assumed) | Maps to `cr_assets` |
+| Header | cr_assets target | Notes |
 |---|---|---|
-| A | Asset ID | `external_id` (generated if blank) |
-| B | Property | `property_id` (lookup by name/slug) |
-| C | Unit | `unit_id` (optional) |
-| D | Name | `name` |
-| E | Category | `asset_type` |
-| F | Model | `model` |
-| G | Serial | `serial_number` |
-| H | Vendor | `vendor` |
-| I | Purchase date | `purchase_date` |
-| J | Purchase price | `purchase_price` |
-| K | Warranty until | `warranty_expiration` |
-| L | Status | `status` (mapped to lifecycle above) |
-| M | Location notes | `metadata.location_notes` |
-| N | Receipt link | `metadata.receipt_url` |
-| O | Replacement cost (est.) | `metadata.replacement_cost` |
-| P | Expected life (yrs) | `metadata.life_years` |
-| Q | Last service | `metadata.last_service_date` |
-| R | Service interval (days) | `metadata.service_interval_days` |
+| `Location` | `_refs.location` → `property_id` | property name; resolved at sync |
+| `Item Category` | `metadata.room` | Bedroom / Kitchen / Living Room / All Rooms / … |
+| `Item Description` | `name` | the human-readable asset name |
+| `Quantity` | `metadata.quantity` | number; blank or `~` → null |
+| `Condition` | `metadata.condition` | New / Excellent / Good / Like New |
+| `Brand/Model (Optional)` | `model` | raw vendor/model description |
 
-### `Consumables` tab — assumed columns
+When the sheet has only these six columns, `cr_assets.asset_type` is
+**derived** from `Item Description` keywords (`deriveAssetType()` in
+`src/lib/inventory-mapping.ts`); `cr_assets.status` defaults to `active`.
 
-| Col | Header (assumed) | Notes |
+### Target schema — operators add over time
+
+| Header | cr_assets target | Notes |
 |---|---|---|
-| A | Property | `property_id` |
-| B | Item | `name` |
-| C | Current qty | triggers reorder when < `reorder_threshold` |
-| D | Reorder threshold | `metadata.reorder_threshold` |
-| E | Supplier | `vendor` |
-| F | Last restocked | `metadata.last_restocked` |
-| G | Unit price | `metadata.unit_price` |
+| `Asset Type` | `asset_type` | overrides keyword derivation when present |
+| `Serial` | `serial_number` | |
+| `Vendor` | `vendor` | |
+| `Purchase Date` | `purchase_date` | YYYY-MM-DD; required for depreciation |
+| `Purchase Price` | `purchase_price` | decimal; required for depreciation |
+| `Warranty Until` | `warranty_expiration` | YYYY-MM-DD |
+| `Status` | `status` | mapped via STATUS_MAP (planned/active/repair/...) |
+| `Location Notes` | `metadata.location_notes` | |
+| `Receipt URL` | `metadata.receipt_url` | |
+| `Replacement Cost` | `metadata.replacement_cost` | |
+| `Life Years` | `metadata.life_years` | overrides DEFAULT_LIFE_YEARS |
+| `Last Service` | `metadata.last_service_date` | |
+| `Service Interval (days)` | `metadata.service_interval_days` | |
 
-Consumables become `cr_assets` rows with `asset_type = 'consumable'` and
-`status = 'active'`.
+### Updating the sheet
+
+To set the canonical header row on the live sheet (writes row 1 of the
+`Global` tab to the union of all headers above):
+
+```bash
+GOOGLE_SA_KEY="$(base64 -w0 < sa.json)" \
+GOOGLE_SA_SUBJECT="gam@chitty.cc" \
+INVENTORY_SHEET_ID="1Zsu...nyWI" \
+node scripts/inventory/init-sheet-headers.mjs
+# add --dry-run to preview without writing
+```
+
+The script is idempotent — re-runs reset the header row to the
+canonical names. Existing data rows are untouched.
+
+### Consumables (deferred)
+
+A separate consumables tab isn't present in the current sheet. When one
+is added, support can be reinstated by adding a second mapping in
+`src/lib/inventory-mapping.ts` with its own `headers` set; the
+`pullByMapping` helper in `src/lib/inventory.ts` is generic.
 
 ## Reconciliation logic
 
