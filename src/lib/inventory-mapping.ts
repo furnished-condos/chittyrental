@@ -1,62 +1,69 @@
 /**
  * Google Sheet → cr_assets mapping.
  *
- * TODO(operator): confirm the real tab names and column letters against
- * the inventory sheet (1Zsu533Uy498ekbXdWpMuw8xIPAl5MCjf7mxFYkznyWI). These
- * are the assumed values from docs/gam-inventory-lifecycle.md §"Sheet schema".
+ * The inventory sheet starts as a simple "what's at the property" roster
+ * (Location / Item Category / Item Description / Quantity / Condition /
+ * Brand-Model) and grows into a richer schedule as operators add columns
+ * for purchase data, warranty, service intervals, etc. Mapping is by
+ * **header name** rather than fixed column letter, so adding a column to
+ * the sheet automatically lights it up here without code changes; absent
+ * columns simply produce `null` cells.
  *
- * Columns are 0-indexed after `spreadsheets.values.get` returns them.
+ * Today the live sheet (Global tab) has only the six "starting place"
+ * headers below. Every aspirational header (Purchase Date, Purchase
+ * Price, Warranty Until, etc.) is listed but optional — the sync
+ * tolerates whichever subset exists.
  */
 
-export interface SheetColumnMap {
-  [cr_field: string]: number; // 0-indexed column in the row array
+/** cr_field → expected sheet header text (case-insensitive match). */
+export interface SheetHeaderMap {
+  [cr_field: string]: string;
 }
 
 export interface InventoryMapping {
   /** Tab (sheet) name */
   tab: string;
-  /** Range A1 notation for the data rows (header excluded) */
+  /** Range A1 notation including the header row at top — header row is
+   *  read for column dispatch, data rows are projected. Use `:Z` (or
+   *  similar wide range) so the read picks up future columns without
+   *  another code change. */
   range: string;
-  /** header-index mapping */
-  columns: SheetColumnMap;
+  /** cr_field → header text. Lookup is case-insensitive + trimmed. */
+  headers: SheetHeaderMap;
 }
 
+/**
+ * Inventory roster mapping. The first six rows below are the headers
+ * present in the current draft sheet ("starting place"). The rest are
+ * the target schema operators can add over time; the sync recognizes
+ * them automatically when they appear.
+ */
 export const INVENTORY_MASTER_MAPPING: InventoryMapping = {
-  tab: "Master",
-  range: "Master!A2:R",
-  columns: {
-    external_id: 0, // A
-    property_ref: 1, // B — property name/slug
-    unit_ref: 2, // C — unit_number within property
-    name: 3, // D
-    asset_type: 4, // E
-    model: 5, // F
-    serial_number: 6, // G
-    vendor: 7, // H
-    purchase_date: 8, // I
-    purchase_price: 9, // J
-    warranty_expiration: 10, // K
-    status: 11, // L
-    location_notes: 12, // M
-    receipt_url: 13, // N
-    replacement_cost: 14, // O
-    life_years: 15, // P
-    last_service_date: 16, // Q
-    service_interval_days: 17, // R
-  },
-};
+  tab: "Global",
+  range: "Global!A1:Z",
+  headers: {
+    // ---- starting-place columns (currently in the draft sheet) ------------
+    location: "Location",                 // → cr_properties.name lookup
+    item_category: "Item Category",       // → metadata.room (Bedroom/Kitchen/...)
+    name: "Item Description",             // → cr_assets.name
+    quantity: "Quantity",                 // → metadata.quantity (number or null)
+    condition: "Condition",               // → metadata.condition (free text)
+    model: "Brand/Model (Optional)",      // → cr_assets.model (raw)
 
-export const INVENTORY_CONSUMABLES_MAPPING: InventoryMapping = {
-  tab: "Consumables",
-  range: "Consumables!A2:G",
-  columns: {
-    property_ref: 0,
-    name: 1,
-    current_qty: 2,
-    reorder_threshold: 3,
-    vendor: 4,
-    last_restocked: 5,
-    unit_price: 6,
+    // ---- aspirational columns (target schema; absent today) ---------------
+    asset_type: "Asset Type",             // → cr_assets.asset_type (operator override)
+    serial_number: "Serial",              // → cr_assets.serial_number
+    vendor: "Vendor",                     // → cr_assets.vendor
+    purchase_date: "Purchase Date",       // → cr_assets.purchase_date (YYYY-MM-DD)
+    purchase_price: "Purchase Price",     // → cr_assets.purchase_price (decimal)
+    warranty_expiration: "Warranty Until",// → cr_assets.warranty_expiration
+    status: "Status",                     // → cr_assets.status (lifecycle)
+    location_notes: "Location Notes",     // → metadata.location_notes
+    receipt_url: "Receipt URL",           // → metadata.receipt_url
+    replacement_cost: "Replacement Cost", // → metadata.replacement_cost
+    life_years: "Life Years",             // → metadata.life_years (depreciation)
+    last_service_date: "Last Service",    // → metadata.last_service_date
+    service_interval_days: "Service Interval (days)", // → metadata.service_interval_days
   },
 };
 
@@ -81,50 +88,124 @@ export function normalizeStatus(raw: unknown): string {
   return STATUS_MAP[raw.trim().toLowerCase()] ?? "active";
 }
 
-/**
- * Fields that live inside cr_assets.metadata JSONB rather than as top-level
- * columns. Kept here (next to the column map) so the sheet schema and the DB
- * shape stay synchronized.
- */
+/** Fields that live inside cr_assets.metadata JSONB rather than as
+ *  top-level columns. */
 const METADATA_FIELDS = new Set([
-  // cr_assets.metadata
+  "item_category",
+  "quantity",
+  "condition",
   "location_notes",
   "receipt_url",
   "replacement_cost",
   "life_years",
   "last_service_date",
   "service_interval_days",
-  // consumables-only metadata
-  "current_qty",
-  "reorder_threshold",
-  "last_restocked",
-  "unit_price",
 ]);
 
+/** Reference fields that point at other cr_* tables; resolved by caller. */
+const REF_FIELDS = new Set(["location"]);
+
 /**
- * Project a row (array of cell values) through a mapping. Top-level fields go
- * on the row; anything in METADATA_FIELDS is nested under `metadata`. Property
- * and unit references are kept on `_refs` because cr_assets stores foreign
- * keys (not names) — the caller resolves those.
+ * Coarse asset_type derivation from the description text + room category,
+ * used when the sheet doesn't have an explicit "Asset Type" column. Each
+ * value matches one of the lifecycle defaults in
+ * `src/lib/depreciation.ts:DEFAULT_LIFE_YEARS`. Operators can override
+ * by adding an "Asset Type" column to the sheet.
+ */
+export function deriveAssetType(
+  description: string | null | undefined,
+  itemCategory: string | null | undefined
+): string {
+  const d = (description ?? "").toLowerCase();
+  const cat = (itemCategory ?? "").toLowerCase();
+  if (/\b(tv|alexa|appletv|streaming|sonos|soundbar|speaker|wifi|router)\b/.test(d)) return "electronics";
+  if (/\b(washer|dryer|fridge|refrigerator|range|stove|microwave|dishwasher|oven|food processor|emulsifier|mixer|vacuum|vaccum)\b/.test(d)) return "appliance";
+  if (/\b(a\/c|hvac|air condition|heater|furnace)\b/.test(d)) return "hvac";
+  if (/\b(toilet|sink|faucet|shower|tub|bidet)\b/.test(d)) return "fixture";
+  if (/\b(rug|curtain|blanket|towel|throw|pillow|quilt|sheet)\b/.test(d)) return "soft_goods";
+  if (/\b(diffuser|connected|smart)\b/.test(d)) return "smart_home";
+  if (/\b(sofa|chair|table|dresser|credenza|nightstand|bed|bench|stool|cart|barcart|mattress|ottoman|sectional|desk|shelf|shelving)\b/.test(d)) return "furniture";
+  if (cat === "bathroom" && /\b(towel|wash|cloth|bath)\b/.test(d)) return "soft_goods";
+  return "other";
+}
+
+/** Parse a Quantity cell. Empty / "~" / non-numeric → null. */
+function parseQuantity(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const s = String(raw).trim();
+  if (!s || s === "~") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Build a (lowercased) header → column-index map from the sheet's first
+ * row. Returns null when the header row is missing.
+ */
+export function buildHeaderIndex(headerRow: unknown[]): Record<string, number> {
+  const idx: Record<string, number> = {};
+  headerRow.forEach((h, i) => {
+    if (typeof h === "string") {
+      idx[h.trim().toLowerCase()] = i;
+    }
+  });
+  return idx;
+}
+
+/**
+ * Project a single data row through the mapping using the resolved
+ * header index. Unknown / missing columns yield `null`. Top-level
+ * cr_assets fields go on the row root; metadata-destined fields nest
+ * under `metadata`; lookups (Location → property_id) go to `_refs`.
  */
 export function projectRow(
   row: unknown[],
-  mapping: InventoryMapping
+  mapping: InventoryMapping,
+  headerIndex: Record<string, number>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const metadata: Record<string, unknown> = {};
   const refs: Record<string, unknown> = {};
-  for (const [field, idx] of Object.entries(mapping.columns)) {
-    const v = row[idx] ?? null;
-    if (field === "property_ref" || field === "unit_ref") {
-      refs[field] = v;
-    } else if (METADATA_FIELDS.has(field)) {
-      metadata[field] = v;
+
+  for (const [crField, headerText] of Object.entries(mapping.headers)) {
+    const colIdx = headerIndex[headerText.trim().toLowerCase()];
+    let value: unknown = null;
+    if (colIdx !== undefined) {
+      const cell = row[colIdx];
+      value =
+        cell === undefined || cell === "" ? null : cell;
+    }
+    if (REF_FIELDS.has(crField)) {
+      refs[crField] = value;
+    } else if (METADATA_FIELDS.has(crField)) {
+      metadata[crField] = value;
     } else {
-      out[field] = v;
+      out[crField] = value;
     }
   }
-  if ("status" in out) out.status = normalizeStatus(out.status);
+
+  // Quantity is metadata-side; coerce to number where possible.
+  if ("quantity" in metadata) {
+    metadata.quantity = parseQuantity(metadata.quantity);
+  }
+
+  // status normalization (only if the sheet has a Status column populated)
+  if ("status" in out && out.status != null) {
+    out.status = normalizeStatus(out.status);
+  } else {
+    // The starting-place sheet has no Status column; default deployed
+    // assets to "active". Operators can override by adding the column.
+    out.status = "active";
+  }
+
+  // Derive asset_type when the sheet doesn't supply one.
+  if (!out.asset_type) {
+    out.asset_type = deriveAssetType(
+      typeof out.name === "string" ? out.name : null,
+      typeof metadata.item_category === "string" ? metadata.item_category : null
+    );
+  }
+
   if (Object.keys(metadata).length) out.metadata = metadata;
   if (Object.keys(refs).length) out._refs = refs;
   return out;

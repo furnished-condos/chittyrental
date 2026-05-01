@@ -1,11 +1,17 @@
 /**
- * Inventory sheet pull + reconciliation against cr_assets.
+ * Inventory sheet pull.
+ *
+ * Reads the configured tab range (header row + data rows), builds a
+ * header-name index, and projects each data row through the mapping.
+ * Tolerates schema growth: new columns added to the sheet light up
+ * automatically as long as their header text matches one of the
+ * `INVENTORY_MASTER_MAPPING.headers` entries.
  */
 
 import { getAccessToken, SCOPES } from "./google-sa";
 import {
-  INVENTORY_CONSUMABLES_MAPPING,
   INVENTORY_MASTER_MAPPING,
+  buildHeaderIndex,
   projectRow,
   type InventoryMapping,
 } from "./inventory-mapping";
@@ -18,10 +24,10 @@ export interface InventoryEnv {
 
 async function getRange(
   env: InventoryEnv,
-  mapping: InventoryMapping
+  range: string
 ): Promise<unknown[][]> {
   const token = await getAccessToken(env, [SCOPES.SHEETS_RO]);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${env.INVENTORY_SHEET_ID}/values/${encodeURIComponent(mapping.range)}`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${env.INVENTORY_SHEET_ID}/values/${encodeURIComponent(range)}`;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   let res: Response;
@@ -41,12 +47,21 @@ async function getRange(
   return body.values ?? [];
 }
 
-export async function pullMaster(env: InventoryEnv): Promise<Record<string, unknown>[]> {
-  const rows = await getRange(env, INVENTORY_MASTER_MAPPING);
-  return rows.map((r) => projectRow(r, INVENTORY_MASTER_MAPPING));
+async function pullByMapping(
+  env: InventoryEnv,
+  mapping: InventoryMapping
+): Promise<Record<string, unknown>[]> {
+  const rows = await getRange(env, mapping.range);
+  if (rows.length === 0) return [];
+  const [headerRow, ...dataRows] = rows;
+  const headerIndex = buildHeaderIndex(headerRow);
+  return dataRows
+    .filter((r) => r.length > 0 && r.some((c) => c !== "" && c != null))
+    .map((r) => projectRow(r, mapping, headerIndex));
 }
 
-export async function pullConsumables(env: InventoryEnv): Promise<Record<string, unknown>[]> {
-  const rows = await getRange(env, INVENTORY_CONSUMABLES_MAPPING);
-  return rows.map((r) => projectRow(r, INVENTORY_CONSUMABLES_MAPPING));
+export async function pullMaster(
+  env: InventoryEnv
+): Promise<Record<string, unknown>[]> {
+  return pullByMapping(env, INVENTORY_MASTER_MAPPING);
 }
