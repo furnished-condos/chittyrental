@@ -57,4 +57,13 @@ All clients use `Authorization: Bearer {CHITTY_AUTH_SERVICE_TOKEN}` + `X-Source-
 - Secrets via `wrangler secret put` — never in `[vars]`
 - Auth middleware checks Bearer token against `CHITTY_AUTH_SERVICE_TOKEN`
 - Dev mode (`ENVIRONMENT != 'production'`) bypasses auth
-- CORS restricted to `rental.chitty.cc`, `app.rental.chitty.cc`, `localhost:5173`
+- **Authenticated `/api/*` CORS allowlist** (internal / first-party consumers):
+  `rental.chitty.cc`, `app.rental.chitty.cc`, `rental.ch1tty.com`,
+  `app.ch1tty.com`, `ch1tty.com`, `localhost:5173`. The `.ch1tty.com`
+  entries are the public-brand domains; `.chitty.cc` is retained for
+  internal service-to-service calls.
+- **Public `/api/public/*` surface** is unauthenticated and open-CORS
+  (reflects any Origin). It is read-only and serves sanitized property /
+  unit / availability data + the MCP manifest for Chico's KB,
+  `furnished-condos.com`, and channel partners. Auth middleware
+  explicitly bypasses `/api/public/*`.

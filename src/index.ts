@@ -16,6 +16,7 @@ import comms from "./routes/comms";
 import wizard from "./routes/wizard";
 import gam from "./routes/gam";
 import calendar, { publicIcal } from "./routes/calendar";
+import publicApi from "./routes/public";
 
 // ---------------------------------------------------------------------------
 // Environment bindings
@@ -58,13 +59,30 @@ export type AppEnv = {
 
 const app = new Hono<AppEnv>();
 
-// CORS
+// Public read-only surface — open CORS. Must be mounted BEFORE the
+// /api/* Bearer middleware so it's reachable without a service token
+// from Chico's KB, furnished-condos.com, and channel partners.
+app.use(
+  "/api/public/*",
+  cors({
+    origin: (origin) => origin, // reflect any origin; responses are public read-only
+    allowMethods: ["GET", "OPTIONS"],
+    allowHeaders: ["Content-Type"],
+    maxAge: 300,
+  })
+);
+app.route("/api/public", publicApi);
+
+// Internal CORS for authed /api/* routes — restricted allowlist.
 app.use(
   "/api/*",
   cors({
     origin: [
       "https://rental.chitty.cc",
       "https://app.rental.chitty.cc",
+      "https://rental.ch1tty.com",
+      "https://app.ch1tty.com",
+      "https://ch1tty.com",
       "http://localhost:5173",
     ],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -79,6 +97,10 @@ app.get("/health", (c) =>
 
 // Auth middleware for /api/* routes
 app.use("/api/*", async (c, next) => {
+  // /api/public/* is the unauthenticated read-only surface.
+  if (c.req.path.startsWith("/api/public/")) {
+    return next();
+  }
   // Bypass auth in dev
   if (c.env.ENVIRONMENT !== "production") {
     return next();
