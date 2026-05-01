@@ -128,13 +128,16 @@ is added, support can be reinstated by adding a second mapping in
 
 ### Pull (sheet → DB), `/api/gam/inventory/sync`
 
-1. Auth as service account → pull `Master`, `Consumables`, `Templates`
-   tabs via `spreadsheets.values.batchGet`.
-2. Validate headers against `src/lib/inventory-mapping.ts` — fail fast
-   if a mapped column is missing.
-3. For each row:
-   - Resolve `property_id` (by slug or name).
-   - Resolve `unit_id` (by `unit_number` within property).
+1. Auth as service account and read the configured `Global!A1:Z` range
+   via `spreadsheets.values.get` (single tab — `Master` / `Consumables`
+   / `Templates` are no longer read).
+2. Build a header index from row 1. Mapped headers that aren't present
+   produce `null` cells per row — the sync **does not** fail-fast on
+   missing columns, so the same code handles the starting-place sheet
+   and the full target schema.
+3. For each non-blank data row:
+   - Resolve `property_id` from the `Location` cell (by name).
+   - Resolve `unit_id` if a `Unit` column is added later (today: null).
    - Compute `external_id` if blank = `sha256(property_slug + unit +
      name + serial).slice(0, 8)`.
    - UPSERT into `cr_assets` keyed on `(external_id)`.
@@ -145,9 +148,12 @@ is added, support can be reinstated by adding a second mapping in
 
 ### Push (DB → sheet)
 
-Only status-column writeback, via `spreadsheets.values.update` on column
-`L`. Runs after calendar state changes. Cells flipped by the Worker get a
-developer metadata tag so operators know it was auto-set.
+Only status-column writeback, via `spreadsheets.values.update` on the
+`Status` header column (column `M` under the canonical header order
+emitted by `scripts/inventory/init-sheet-headers.mjs`; if operators
+reorder columns, the writer resolves the live position by reading row 1
+first). Runs after calendar state changes. Cells flipped by the Worker
+get a developer-metadata tag so operators know it was auto-set.
 
 ## Calendar integration
 
