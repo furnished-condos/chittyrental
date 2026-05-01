@@ -139,11 +139,9 @@ async function main() {
   console.log(`target: spreadsheet=${sheetId} range=${range}`);
   console.log(`headers (${HEADERS.length}): ${HEADERS.join(" | ")}`);
 
-  if (dryRun) {
-    console.log("DRY: skipping API call");
-    return;
-  }
-
+  // Note: dry-run still performs the auth + GET so operators can see
+  // exactly which existing cells would be overwritten. Only the final
+  // PUT is skipped.
   const token = await getAccessToken(
     sa,
     ["https://www.googleapis.com/auth/spreadsheets"],
@@ -167,6 +165,11 @@ async function main() {
     }
   } else {
     console.warn(`could not read existing row 1 (${getRes.status}); proceeding with write`);
+  }
+
+  if (dryRun) {
+    console.log("DRY: skipping write");
+    return;
   }
 
   const putUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;

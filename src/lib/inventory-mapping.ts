@@ -85,7 +85,10 @@ export const STATUS_MAP: Record<string, string> = {
 
 export function normalizeStatus(raw: unknown): string {
   if (typeof raw !== "string") return "active";
-  return STATUS_MAP[raw.trim().toLowerCase()] ?? "active";
+  // Canonicalize separators so both `end_of_life` (matches the cr_assets
+  // status enum form) and `end-of-life` (the STATUS_MAP key form) map.
+  const key = raw.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  return STATUS_MAP[key] ?? "active";
 }
 
 /** Fields that live inside cr_assets.metadata JSONB rather than as
@@ -101,6 +104,14 @@ const METADATA_FIELDS = new Set([
   "last_service_date",
   "service_interval_days",
 ]);
+
+/** Renames applied when projecting from cr_field to the metadata key.
+ *  Keeps the mapping config natural (e.g. matches the sheet header
+ *  `Item Category`) while the persisted shape uses the documented key
+ *  (`metadata.room`). */
+const METADATA_KEY_RENAME: Record<string, string> = {
+  item_category: "room",
+};
 
 /** Reference fields that point at other cr_* tables; resolved by caller. */
 const REF_FIELDS = new Set(["location"]);
@@ -178,7 +189,8 @@ export function projectRow(
     if (REF_FIELDS.has(crField)) {
       refs[crField] = value;
     } else if (METADATA_FIELDS.has(crField)) {
-      metadata[crField] = value;
+      const metaKey = METADATA_KEY_RENAME[crField] ?? crField;
+      metadata[metaKey] = value;
     } else {
       out[crField] = value;
     }
@@ -198,11 +210,12 @@ export function projectRow(
     out.status = "active";
   }
 
-  // Derive asset_type when the sheet doesn't supply one.
+  // Derive asset_type when the sheet doesn't supply one. `metadata.room`
+  // is what `Item Category` lands at after the metadata-key rename.
   if (!out.asset_type) {
     out.asset_type = deriveAssetType(
       typeof out.name === "string" ? out.name : null,
-      typeof metadata.item_category === "string" ? metadata.item_category : null
+      typeof metadata.room === "string" ? metadata.room : null
     );
   }
 
