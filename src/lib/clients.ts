@@ -7,6 +7,7 @@ interface Env {
   CHITTYGOV_URL?: string;
   CHITTYFINANCE_URL?: string;
   CHITTYCHARGE_URL?: string;
+  CHITTYTRANSACT_URL?: string;
   CHITTYSCHEMA_URL?: string;
   CHITTY_AUTH_SERVICE_TOKEN?: string;
 }
@@ -67,4 +68,53 @@ export function chargeClient(env: Env): ServiceClient | null {
 export function schemaClient(env: Env): ServiceClient | null {
   if (!env.CHITTYSCHEMA_URL) return null;
   return makeClient(env.CHITTYSCHEMA_URL, env.CHITTY_AUTH_SERVICE_TOKEN ?? "");
+}
+
+/**
+ * ChittyTransact API client — unified commerce surface.
+ * Wraps ChittyCharge (holds) and the ChittyPay scope (payments, payouts).
+ * Prefer this over chargeClient(): transact.chitty.cc/v1/holds/* re-exposes the
+ * same hold surface AND adds /v1/payments (charge-now) so rent + deposits go
+ * through one service. chargeClient() is retained for backward compatibility.
+ */
+export function transactClient(env: Env): ServiceClient | null {
+  if (!env.CHITTYTRANSACT_URL) return null;
+  return makeClient(env.CHITTYTRANSACT_URL, env.CHITTY_AUTH_SERVICE_TOKEN ?? "");
+}
+
+export interface RentPaymentResult {
+  id: string; // charge_id backlink stored in cr_rent_ledger / cr_payments
+  status: string;
+  amount: number;
+}
+
+/**
+ * Charge rent for a lease through ChittyTransact (hold + capture in one call).
+ * Returns the payment id to persist as `charge_id`. Falls back to the legacy
+ * ChittyCharge two-step only if CHITTYTRANSACT_URL is unset.
+ */
+export async function chargeRent(
+  env: Env,
+  input: { amount: number; currency?: string; description: string; lease_id: string; tenant_id?: string },
+): Promise<RentPaymentResult> {
+  const transact = transactClient(env);
+  if (transact) {
+    return transact.post<RentPaymentResult>("/v1/payments", {
+      amount: input.amount,
+      currency: input.currency ?? "usd",
+      description: input.description,
+      metadata: { lease_id: input.lease_id, ...(input.tenant_id ? { tenant_id: input.tenant_id } : {}), source: "chittyrental" },
+    });
+  }
+
+  const charge = chargeClient(env);
+  if (!charge) throw new Error("Neither CHITTYTRANSACT_URL nor CHITTYCHARGE_URL configured");
+  const hold = await charge.post<{ id: string; status: string; amount: number }>("/api/holds", {
+    amount: input.amount,
+    currency: input.currency ?? "usd",
+    description: input.description,
+    metadata: { lease_id: input.lease_id, source: "chittyrental" },
+  });
+  await charge.post(`/api/holds/${hold.id}/capture`, {});
+  return { id: hold.id, status: "captured", amount: input.amount };
 }
